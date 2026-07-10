@@ -2,5 +2,5 @@
   "id": "rmpflt",
   "name": "RoleModel Preflight",
   "modes": ["canvas"],
-  "icon": "/icon.svg"
+  "icon": "icon.svg"
 }

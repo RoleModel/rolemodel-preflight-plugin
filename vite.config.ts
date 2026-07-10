@@ -3,7 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
-import * as esbuild from "esbuild";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
@@ -845,40 +844,6 @@ function resolveRelativeReExport(content: string, filePath: string): string {
   }
 
   return fs.readFileSync(targetPath, "utf-8");
-}
-
-/**
- * Downcompiles optional chaining (`?.`) and related ES2020+ syntax that
- * Framer's SWC-based parser rejects when uploading code files.
- *
- * Uses esbuild to compile to ES2019 target with JSX preserved, which:
- *  - Rewrites `?.` to equivalent ternary expressions
- *  - Rewrites `??` (nullish coalescing) to || with extra guard
- *  - Strips TypeScript type annotations (Framer doesn't need them at runtime)
- *  - Preserves all JSX syntax so Framer can display the component tree
- *
- * Falls back to the original source if esbuild fails (e.g. file already has
- * errors that esbuild can't parse).
- */
-function stripOptionalChaining(source: string): string {
-  // Preserve original TypeScript source unless we actually need to downlevel
-  // optional chaining/nullish coalescing for Framer's parser.
-  if (!source.includes("?.") && !source.includes("??")) {
-    return source;
-  }
-
-  try {
-    const result = esbuild.transformSync(source, {
-      jsx: "preserve", // keep JSX — Framer handles JSX itself
-      keepNames: true,
-      loader: "tsx",
-      target: "es2019", // ES2019 strips ?. and ?? before they were adopted,
-    });
-    return result.code;
-  } catch {
-    // Best effort — return original and let Framer surface the error
-    return source;
-  }
 }
 
 function readDirectSyncFiles() {
