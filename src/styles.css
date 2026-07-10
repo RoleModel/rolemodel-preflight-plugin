@@ -57,6 +57,11 @@ button {
   cursor: pointer;
 }
 
+p {
+  font-size: var(--op-font-small);
+  margin-block-end: var(--op-space-x-small);
+}
+
 .plugin-root {
   min-height: 100vh;
   padding: var(--op-space-x-small);
@@ -275,7 +280,7 @@ button {
 }
 
 .template-table__apply:disabled {
-  opacity: 0.6;
+  opacity: var(--op-opacity-disabled);
   cursor: wait;
 }
 
