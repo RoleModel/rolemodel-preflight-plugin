@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RoleModel Preflight</title>
+    <!--
+      Framer injects ?mode= when the plugin is launched inside the host.
+      Direct browser opens need a default mode so the bundle can load.
+      Keep this inline script ahead of the module graph.
+    -->
+    <script>
+      (function () {
+        try {
+          var q = new URLSearchParams(window.location.search);
+          var m = q.get("mode");
+          if (m !== null && m !== "") return;
+          q.set("mode", "canvas");
+          var next =
+            window.location.pathname +
+            "?" +
+            q.toString() +
+            window.location.hash;
+          if (
+            next !==
+            window.location.pathname +
+              window.location.search +
+              window.location.hash
+          ) {
+            window.location.replace(next);
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
