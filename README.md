@@ -1,3 +1,5 @@
+![Cover Image](ReadMeImage@2x.png)
+
 # RoleModel Preflight
 
 RoleModel Preflight is a standalone Framer plugin for running project checks before publishing. It scans canvas components, code files, links, copy, contrast candidates, and spacing templates from inside the Framer UI.
