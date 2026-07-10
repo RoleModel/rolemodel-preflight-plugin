@@ -69,6 +69,36 @@ export function Preview() {
           </div>
           <span className="template-card__badge">Ready</span>
         </div>
+        <div className="violation-list" aria-label="Actionable violations">
+          <article className="violation-card">
+            <div>
+              <strong>WARNING link: CTA button (QltYy4fEy)</strong>
+              <span># - Placeholder link.</span>
+            </div>
+            <div className="violation-card__actions">
+              <button className="template-table__apply" type="button">
+                Go to
+              </button>
+              <button className="template-table__apply" type="button">
+                Clear link
+              </button>
+            </div>
+          </article>
+          <article className="violation-card">
+            <div>
+              <strong>Punctuation: Hero copy (b3Xf7qpB0)</strong>
+              <span>Repeated punctuation. Build better software...</span>
+            </div>
+            <div className="violation-card__actions">
+              <button className="template-table__apply" type="button">
+                Go to
+              </button>
+              <button className="template-table__apply" disabled type="button">
+                No fix
+              </button>
+            </div>
+          </article>
+        </div>
         <pre className="report">{previewReport}</pre>
       </section>
 

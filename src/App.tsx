@@ -41,6 +41,17 @@ interface PreflightSnapshot {
   hasIssues: boolean;
 }
 
+interface ViolationAction {
+  id: string;
+  title: string;
+  description: string;
+  nodeId?: string;
+  fix?: {
+    label: string;
+    type: "clearLink";
+  };
+}
+
 type ScanSection = "preflight" | "spacing";
 
 type OptionalCheckKey = keyof TeamPreflightOptions;
@@ -246,6 +257,7 @@ async function collectTeamPreflightInput() {
       continue;
     }
     links.push({
+      canClearLink: true,
       nodeId: node.id,
       source: `${node.name ?? "Linked node"} (${node.id})`,
       value: href,
@@ -258,6 +270,7 @@ async function collectTeamPreflightInput() {
       continue;
     }
     links.push({
+      canClearLink: true,
       nodeId: node.id,
       source: `${node.name ?? "Linked text"} (${node.id})`,
       value: href,
@@ -412,6 +425,60 @@ async function checkSpelling(texts: TextCandidate[]): Promise<SpellingIssue[]> {
   return issues;
 }
 
+function buildViolationActions(
+  teamReport: Awaited<ReturnType<typeof runTeamPreflight>>
+): ViolationAction[] {
+  const actions: ViolationAction[] = [];
+
+  for (const [index, issue] of teamReport.linkIssues.entries()) {
+    actions.push({
+      description: `${issue.href || "(empty)"} - ${issue.reason}`,
+      fix: issue.canClearLink
+        ? {
+            label: "Clear link",
+            type: "clearLink",
+          }
+        : undefined,
+      id: `link-${index}-${issue.nodeId ?? "project"}`,
+      nodeId: issue.nodeId,
+      title: `${issue.severity.toUpperCase()} link: ${issue.source}`,
+    });
+  }
+
+  for (const [index, issue] of teamReport.punctuationIssues.entries()) {
+    actions.push({
+      description: `${issue.reason} ${issue.text}`,
+      id: `punctuation-${index}-${issue.nodeId ?? "project"}`,
+      nodeId: issue.nodeId,
+      title: `Punctuation: ${issue.source}`,
+    });
+  }
+
+  for (const [index, issue] of teamReport.spellingIssues.entries()) {
+    const suggestions =
+      issue.suggestions.length > 0
+        ? ` Suggestions: ${issue.suggestions.join(", ")}`
+        : "";
+    actions.push({
+      description: `${issue.word} - ${issue.message}.${suggestions}`,
+      id: `spelling-${index}-${issue.nodeId ?? "project"}`,
+      nodeId: issue.nodeId,
+      title: `Spelling: ${issue.source}`,
+    });
+  }
+
+  for (const [index, issue] of teamReport.contrastIssues.entries()) {
+    actions.push({
+      description: `${issue.foreground} on ${issue.background} = ${issue.ratio.toFixed(2)}:1; needs ${issue.requiredRatio}:1.`,
+      id: `contrast-${index}-${issue.nodeId ?? "project"}`,
+      nodeId: issue.nodeId,
+      title: `Contrast: ${issue.source}`,
+    });
+  }
+
+  return actions;
+}
+
 export function App() {
   const [section, setSection] = useState<ScanSection>("preflight");
   const [selectedTemplateId, setSelectedTemplateId] = useState(
@@ -424,6 +491,9 @@ export function App() {
   );
   const [report, setReport] = useState<string>(
     "Run Preflight to scan code health, canvas instances, and remote imports."
+  );
+  const [violationActions, setViolationActions] = useState<ViolationAction[]>(
+    []
   );
 
   const selectedTemplate = useMemo(
@@ -498,6 +568,7 @@ export function App() {
 
     setScanning(true);
     setReport("Running RoleModel preflight…");
+    setViolationActions([]);
 
     try {
       const codeHealth = await scanCodeHealthSnapshot();
@@ -526,6 +597,7 @@ export function App() {
       ].join("\n");
 
       setReport(text);
+      setViolationActions(buildViolationActions(teamReport));
       await framer.notify(
         issues > 0
           ? `Preflight found ${issues} issue group(s).`
@@ -542,6 +614,63 @@ export function App() {
       setScanning(false);
     }
   }, [scanning, teamOptions]);
+
+  const handleGoToViolation = useCallback(async (action: ViolationAction) => {
+    if (!action.nodeId) {
+      await framer.notify("This violation is not tied to a canvas node.", {
+        variant: "info",
+      });
+      return;
+    }
+
+    try {
+      const node = await framer.getNode(action.nodeId);
+      if (!node) {
+        await framer.notify("That canvas node no longer exists.", {
+          variant: "warning",
+        });
+        return;
+      }
+      await node.navigateTo({ select: true, zoomIntoView: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await framer.notify(`Could not navigate to violation: ${message}`, {
+        variant: "error",
+      });
+    }
+  }, []);
+
+  const handleFixViolation = useCallback(async (action: ViolationAction) => {
+    if (!action.nodeId || action.fix?.type !== "clearLink") {
+      await framer.notify("No automatic fix is available for this violation.", {
+        variant: "info",
+      });
+      return;
+    }
+
+    try {
+      const node = await framer.getNode(action.nodeId);
+      if (!node) {
+        await framer.notify("That canvas node no longer exists.", {
+          variant: "warning",
+        });
+        return;
+      }
+      await node.setAttributes({ link: null } as any);
+      await node.navigateTo({ select: true, zoomIntoView: true });
+      await framer.notify("Cleared the broken link on the selected node.", {
+        variant: "success",
+      });
+      setViolationActions((current) =>
+        current.filter((row) => row.id !== action.id)
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await framer.notify(`Could not fix violation: ${message}`, {
+        variant: "error",
+      });
+    }
+  }, []);
 
   const toggleTeamOption = useCallback((key: OptionalCheckKey) => {
     setTeamOptions((current) => ({
@@ -633,6 +762,50 @@ export function App() {
               <p>Local checks for spacing, placeholders, and punctuation.</p>
             </label>
           </div>
+
+          {violationActions.length > 0 ? (
+            <div className="violation-list" aria-label="Actionable violations">
+              <div className="panel-topline">
+                <span className="panel-label">Actionable violations</span>
+                <span className="panel-muted">
+                  Jump to a problem or apply a safe fix when available.
+                </span>
+              </div>
+              {violationActions.slice(0, 40).map((action) => (
+                <article className="violation-card" key={action.id}>
+                  <div>
+                    <strong>{action.title}</strong>
+                    <span>{action.description}</span>
+                  </div>
+                  <div className="violation-card__actions">
+                    <button
+                      className="template-table__apply"
+                      disabled={!action.nodeId}
+                      onClick={() => void handleGoToViolation(action)}
+                      type="button"
+                    >
+                      Go to
+                    </button>
+                    <button
+                      className="template-table__apply"
+                      disabled={!action.fix}
+                      onClick={() => void handleFixViolation(action)}
+                      type="button"
+                    >
+                      {action.fix?.label ?? "No fix"}
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {violationActions.length > 40 ? (
+                <p className="panel-muted">
+                  Showing 40 of {violationActions.length} actionable violations.
+                  Narrow the checks or fix the first batch, then run Preflight
+                  again.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           <pre className="report">{report}</pre>
         </section>

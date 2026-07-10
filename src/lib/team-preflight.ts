@@ -2,6 +2,7 @@ export interface LinkCandidate {
   source: string;
   nodeId?: string;
   label?: string;
+  canClearLink?: boolean;
   value: unknown;
 }
 
@@ -41,6 +42,7 @@ export interface LinkIssue {
   href: string;
   reason: string;
   nodeId?: string;
+  canClearLink?: boolean;
 }
 
 export interface PunctuationIssue {
@@ -210,11 +212,12 @@ function evaluateLinkCandidate(
 ): LinkIssue[] {
   const href = extractHref(candidate.value);
   const { source } = candidate;
-  const { nodeId } = candidate;
+  const { canClearLink, nodeId } = candidate;
   const issues: LinkIssue[] = [];
 
   if (!href) {
     issues.push({
+      canClearLink,
       href: "",
       nodeId,
       reason: "Empty link value.",
@@ -230,6 +233,7 @@ function evaluateLinkCandidate(
     href.toLowerCase() === SCRIPT_PLACEHOLDER_URL
   ) {
     issues.push({
+      canClearLink,
       href,
       nodeId,
       reason: "Placeholder link.",
@@ -241,6 +245,7 @@ function evaluateLinkCandidate(
 
   if (PLACEHOLDER_URL_RE.test(href)) {
     issues.push({
+      canClearLink,
       href,
       nodeId,
       reason: "Placeholder or example URL.",
@@ -265,6 +270,7 @@ function evaluateLinkCandidate(
 
     if (status.unverified) {
       issues.push({
+        canClearLink,
         href,
         nodeId,
         reason:
@@ -275,6 +281,7 @@ function evaluateLinkCandidate(
       });
     } else if (!status.ok) {
       issues.push({
+        canClearLink,
         href,
         nodeId,
         reason: status.status
@@ -289,6 +296,7 @@ function evaluateLinkCandidate(
 
   if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
     issues.push({
+      canClearLink,
       href,
       nodeId,
       reason: "Unsupported or malformed link protocol.",
@@ -301,6 +309,7 @@ function evaluateLinkCandidate(
   const path = pathFromUrlLike(href);
   if (!path) {
     issues.push({
+      canClearLink,
       href,
       nodeId,
       reason: "Could not parse link target.",
@@ -312,6 +321,7 @@ function evaluateLinkCandidate(
 
   if (!pagePaths.has(path)) {
     issues.push({
+      canClearLink,
       href,
       nodeId,
       reason: `Internal page path ${path} was not found.`,
