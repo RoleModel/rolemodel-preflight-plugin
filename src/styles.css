@@ -1,0 +1,282 @@
+@import "https://raw.githubusercontent.com/RoleModel/rolemodel-brand/refs/heads/main/typography/font.css";
+@import "https://raw.githubusercontent.com/RoleModel/rolemodel-brand/refs/heads/main/tokens/brand.css";
+@import "https://cdn.jsdelivr.net/npm/@rolemodel/optics@2.4.0/dist/css/optics.min.css";
+
+:root {
+  --rmp-color-canvas: var(--op-color-neutral-plus-eight);
+  --rmp-color-surface: var(--op-color-white);
+  --rmp-color-surface-muted: var(--op-color-neutral-plus-seven);
+  --rmp-color-surface-subtle: var(--op-color-neutral-plus-eight);
+  --rmp-color-border: var(--op-color-border);
+  --rmp-color-border-subtle: var(--op-color-neutral-plus-six);
+  --rmp-color-text: var(--op-color-neutral-minus-seven);
+  --rmp-color-text-muted: var(--op-color-neutral-minus-three);
+  --rmp-color-accent: var(--op-color-primary-base);
+  --rmp-color-accent-muted: var(--op-color-primary-plus-seven);
+  --rmp-color-accent-strong: var(--op-color-primary-minus-one);
+  --rmp-color-action: var(--op-color-neutral-minus-seven);
+  --rmp-color-action-text: var(--op-color-white);
+  --rmp-focus-ring: 0 0 0 var(--op-border-width)
+    var(--op-color-primary-plus-six);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "DM Sans Variable", sans-serif;
+  font-size: 13px;
+  color: var(--rmp-color-text);
+  background: var(--rmp-color-canvas);
+}
+
+button,
+pre {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+}
+
+.plugin-root {
+  min-height: 100vh;
+  padding: var(--op-space-x-small);
+  display: flex;
+  flex-direction: column;
+  gap: var(--op-space-x-small);
+}
+
+.header,
+.panel {
+  border: var(--op-border-width) solid var(--rmp-color-border);
+  border-radius: 8px;
+  background: var(--rmp-color-surface);
+}
+
+.header {
+  padding: var(--op-space-x-small);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--op-space-x-small);
+}
+
+.header-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--rmp-color-accent);
+}
+
+.header-title {
+  margin: var(--op-space-3x-small) 0 var(--op-space-2x-small);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.header-copy {
+  margin: 0;
+  max-width: 54ch;
+  color: var(--rmp-color-text-muted);
+  line-height: 1.45;
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--op-space-2x-small);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.panel {
+  padding: var(--op-space-x-small);
+  display: flex;
+  flex-direction: column;
+  gap: var(--op-space-x-small);
+}
+
+.panel-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--op-space-x-small);
+  flex-wrap: wrap;
+}
+
+.panel-label {
+  font-weight: 700;
+  color: var(--rmp-color-text);
+}
+
+.panel-muted {
+  color: var(--rmp-color-text-muted);
+}
+
+.report {
+  margin: 0;
+  padding: var(--op-space-x-small);
+  border-radius: 8px;
+  background: var(--rmp-color-surface-muted);
+  border: var(--op-border-width) solid var(--rmp-color-border);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.45;
+  max-height: 56vh;
+  overflow: auto;
+}
+
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--op-space-2x-small);
+}
+
+.check-card input {
+  margin-top: var(--op-space-3x-small);
+  accent-color: var(--rmp-color-accent);
+}
+
+.card strong {
+  display: block;
+  font-size: var(--op-font-size-small);
+}
+
+.check-card span span {
+  display: block;
+  margin-top: var(--op-space-3x-small);
+  color: var(--rmp-color-text-muted);
+  line-height: 1.35;
+}
+
+.report--compact {
+  max-height: 18vh;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--op-space-x-small);
+}
+
+.template-card {
+  border: var(--op-border-width) solid var(--rmp-color-border);
+  border-radius: 8px;
+  background: var(--rmp-color-surface);
+  overflow: hidden;
+}
+
+.template-card--selected {
+  border-color: var(--rmp-color-accent);
+  box-shadow: var(--rmp-focus-ring);
+}
+
+.template-card__header {
+  width: 100%;
+  padding: var(--op-space-x-small);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--op-space-x-small);
+  text-align: left;
+  background: var(--rmp-color-surface-subtle);
+  border-bottom: var(--op-border-width) solid var(--rmp-color-border);
+}
+
+.template-card__header strong {
+  display: block;
+  font-size: 13px;
+}
+
+.template-card__header span span {
+  display: block;
+  margin-top: var(--op-space-3x-small);
+  color: var(--rmp-color-text-muted);
+  line-height: 1.4;
+}
+
+.template-card__badge {
+  flex-shrink: 0;
+  padding: var(--op-space-3x-small) var(--op-space-2x-small);
+  border-radius: 999px;
+  background: var(--rmp-color-accent-muted);
+  color: var(--rmp-color-accent-strong);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.template-table {
+  display: grid;
+  padding: var(--op-space-x-small);
+  gap: var(--op-space-2x-small);
+}
+
+.template-table__head,
+.template-table__row {
+  display: grid;
+  grid-template-columns: 1fr repeat(3, minmax(0, 0.8fr)) auto;
+  gap: var(--op-space-2x-small);
+  align-items: center;
+}
+
+.template-table__head {
+  color: var(--rmp-color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.template-table__row {
+  padding-top: var(--op-space-2x-small);
+  border-top: var(--op-border-width) solid var(--rmp-color-border-subtle);
+  color: var(--rmp-color-text);
+}
+
+.template-card__footer {
+  display: flex;
+  gap: var(--op-space-2x-small);
+  flex-wrap: wrap;
+  padding: 0 var(--op-space-x-small) var(--op-space-x-small);
+}
+
+.template-table__apply {
+  border-radius: 6px;
+  padding: var(--op-space-2x-small) var(--op-space-2x-small);
+  background: var(--rmp-color-action);
+  color: var(--rmp-color-action-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.template-table__apply:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+@media (max-width: 560px) {
+  .header {
+    flex-direction: column;
+  }
+
+  .header-actions {
+    justify-content: flex-start;
+  }
+
+  .template-table__head,
+  .template-table__row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
