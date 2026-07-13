@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node test/team-preflight.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "check": "ultracite check",
     "fix": "ultracite fix",
     "prepare": "husky"

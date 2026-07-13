@@ -2,7 +2,16 @@ import { framer } from "framer-plugin";
 import React, { useCallback, useMemo, useState } from "react";
 
 import { formatCanvasInstanceReport } from "./lib/canvas-instances";
+import {
+  findCodeFilePathDriftIssues,
+  formatCodeFilePathDriftReport,
+} from "./lib/code-file-integrity";
 import { analyzeCodeHealth, formatCodeHealthReport } from "./lib/code-health";
+import {
+  findLayoutDriftIssues,
+  formatLayoutDriftReport,
+} from "./lib/layout-drift";
+import type { LayoutDriftIssue } from "./lib/layout-drift";
 import {
   formatFramerLocalScanReport,
   scanCodeFileSourcesForFramerLocal,
@@ -46,9 +55,12 @@ interface ViolationAction {
   title: string;
   description: string;
   nodeId?: string;
+  codeFileId?: string;
+  codeFileName?: string;
+  codeFileContent?: string;
   fix?: {
     label: string;
-    type: "clearLink";
+    type: "clearLink" | "createRootCodeFileCopy";
   };
 }
 
@@ -148,6 +160,7 @@ async function scanCanvasInstancesSnapshot() {
 
 async function scanRemoteImportsSnapshot(
   seedUrls: string[],
+  codeFileNames: string[],
   instances: {
     id: string;
     insertURL: string | null;
@@ -156,6 +169,7 @@ async function scanRemoteImportsSnapshot(
   }[]
 ) {
   const moduleScanResult = await scanModuleUrlsForFramerLocal(seedUrls, {
+    codeFileNames,
     maxTotalFetches: 1200,
   });
   const framerFiles = await framer.getCodeFiles();
@@ -187,9 +201,80 @@ async function scanRemoteImportsSnapshot(
   return {
     fetchCount: moduleScanResult.scans.length,
     hasIssues,
+    moduleScans: moduleScanResult.scans,
     report,
     truncated: moduleScanResult.truncated,
   };
+}
+
+async function scanCodeFileIntegritySnapshot(
+  moduleScans: Awaited<
+    ReturnType<typeof scanModuleUrlsForFramerLocal>
+  >["scans"],
+  instances: {
+    id: string;
+    insertURL: string | null;
+    componentName?: string | null;
+  }[]
+) {
+  const files = await framer.getCodeFiles();
+  const issues = findCodeFilePathDriftIssues({
+    files: files.map((file) => ({
+      content: file.content,
+      id: file.id,
+      name: file.name,
+      path: file.path,
+    })),
+    instances,
+    moduleScans,
+  });
+
+  return {
+    files,
+    hasIssues: issues.length > 0,
+    issues,
+    report: formatCodeFilePathDriftReport(issues),
+  };
+}
+
+function nodeSizeValue(node: object, key: "height" | "width"): unknown {
+  const record = node as Record<string, unknown>;
+  const attributes = record.attributes as Record<string, unknown> | undefined;
+  return record[key] ?? attributes?.[key];
+}
+
+async function collectLayoutDriftInput() {
+  const [instances, textNodes] = await Promise.all([
+    framer.getNodesWithType("ComponentInstanceNode"),
+    framer.getNodesWithType("TextNode"),
+  ]);
+
+  const rows = [];
+  for (const instance of instances) {
+    rows.push({
+      componentIdentifier: instance.componentIdentifier,
+      componentName: instance.componentName,
+      height: nodeSizeValue(instance, "height"),
+      id: instance.id,
+      name: instance.name,
+      type: "ComponentInstanceNode",
+      width: nodeSizeValue(instance, "width"),
+    });
+  }
+
+  for (const node of textNodes) {
+    const text = await getNodeTextIfAvailable(node);
+    rows.push({
+      height: nodeSizeValue(node, "height"),
+      id: node.id,
+      name: node.name,
+      text,
+      type: "TextNode",
+      width: nodeSizeValue(node, "width"),
+    });
+  }
+
+  return rows;
 }
 
 function stringColor(value: unknown): string | null {
@@ -426,7 +511,9 @@ async function checkSpelling(texts: TextCandidate[]): Promise<SpellingIssue[]> {
 }
 
 function buildViolationActions(
-  teamReport: Awaited<ReturnType<typeof runTeamPreflight>>
+  teamReport: Awaited<ReturnType<typeof runTeamPreflight>>,
+  pathDriftIssues: Awaited<ReturnType<typeof findCodeFilePathDriftIssues>>,
+  layoutDriftIssues: LayoutDriftIssue[]
 ): ViolationAction[] {
   const actions: ViolationAction[] = [];
 
@@ -473,6 +560,34 @@ function buildViolationActions(
       id: `contrast-${index}-${issue.nodeId ?? "project"}`,
       nodeId: issue.nodeId,
       title: `Contrast: ${issue.source}`,
+    });
+  }
+
+  for (const [index, issue] of pathDriftIssues.entries()) {
+    const firstInstanceId = issue.referencedBy
+      .flatMap((reference) => reference.instanceIds)
+      .at(0);
+    actions.push({
+      codeFileContent: issue.content,
+      codeFileId: issue.id,
+      codeFileName: issue.name,
+      description: `${issue.path} is referenced by external module code but no root ${issue.expectedRootPath} code file exists.`,
+      fix: {
+        label: "Create root copy",
+        type: "createRootCodeFileCopy",
+      },
+      id: `path-drift-${index}-${issue.id}`,
+      nodeId: firstInstanceId,
+      title: `Code file path drift: ${issue.name}`,
+    });
+  }
+
+  for (const issue of layoutDriftIssues) {
+    actions.push({
+      description: issue.reason,
+      id: issue.id,
+      nodeId: issue.nodeId,
+      title: issue.title,
     });
   }
 
@@ -573,16 +688,29 @@ export function App() {
     try {
       const codeHealth = await scanCodeHealthSnapshot();
       const canvas = await scanCanvasInstancesSnapshot();
+      const framerFiles = await framer.getCodeFiles();
       const remote = await scanRemoteImportsSnapshot(
         canvas.seedUrls,
+        framerFiles.map((file) => file.name),
         canvas.instances
+      );
+      const codeFileIntegrity = await scanCodeFileIntegritySnapshot(
+        remote.moduleScans,
+        canvas.instances
+      );
+      const layoutDriftIssues = findLayoutDriftIssues(
+        await collectLayoutDriftInput()
       );
       const teamInput = await collectTeamPreflightInput();
       const teamReport = await runTeamPreflight(teamInput, teamOptions, {
         checkExternalLinks,
         checkSpelling,
       });
-      const issues = codeHealth.issues + (remote.hasIssues ? 1 : 0);
+      const issues =
+        codeHealth.issues +
+        (remote.hasIssues ? 1 : 0) +
+        codeFileIntegrity.issues.length +
+        layoutDriftIssues.length;
 
       const text = [
         "RoleModel Preflight",
@@ -593,11 +721,21 @@ export function App() {
         "",
         remote.report.trim(),
         "",
+        codeFileIntegrity.report.trim(),
+        "",
+        formatLayoutDriftReport(layoutDriftIssues).trim(),
+        "",
         formatTeamPreflightReport(teamReport, teamOptions).trim(),
       ].join("\n");
 
       setReport(text);
-      setViolationActions(buildViolationActions(teamReport));
+      setViolationActions(
+        buildViolationActions(
+          teamReport,
+          codeFileIntegrity.issues,
+          layoutDriftIssues
+        )
+      );
       await framer.notify(
         issues > 0
           ? `Preflight found ${issues} issue group(s).`
@@ -641,7 +779,7 @@ export function App() {
   }, []);
 
   const handleFixViolation = useCallback(async (action: ViolationAction) => {
-    if (!action.nodeId || action.fix?.type !== "clearLink") {
+    if (!action.fix) {
       await framer.notify("No automatic fix is available for this violation.", {
         variant: "info",
       });
@@ -649,6 +787,55 @@ export function App() {
     }
 
     try {
+      if (action.fix.type === "createRootCodeFileCopy") {
+        if (!action.codeFileName || !action.codeFileContent) {
+          await framer.notify("This code-file fix is missing source content.", {
+            variant: "error",
+          });
+          return;
+        }
+
+        const existingFiles = await framer.getCodeFiles();
+        const existingRoot = existingFiles.find(
+          (file) => file.path === action.codeFileName
+        );
+        const rootFile =
+          existingRoot ??
+          (await framer.createCodeFile(
+            action.codeFileName,
+            action.codeFileContent
+          ));
+        const diagnostics = await rootFile.typecheck({ strict: true });
+
+        if (action.nodeId) {
+          const node = await framer.getNode(action.nodeId);
+          await node?.navigateTo({ select: true, zoomIntoView: true });
+        } else {
+          await rootFile.navigateTo();
+        }
+
+        await framer.notify(
+          diagnostics.length > 0
+            ? `Created root code file, but typecheck found ${diagnostics.length} issue(s).`
+            : "Created root code file copy. Re-run preflight after relinking or republishing the affected component.",
+          { variant: diagnostics.length > 0 ? "warning" : "success" }
+        );
+        setViolationActions((current) =>
+          current.filter((row) => row.id !== action.id)
+        );
+        return;
+      }
+
+      if (!action.nodeId || action.fix.type !== "clearLink") {
+        await framer.notify(
+          "No automatic fix is available for this violation.",
+          {
+            variant: "info",
+          }
+        );
+        return;
+      }
+
       const node = await framer.getNode(action.nodeId);
       if (!node) {
         await framer.notify("That canvas node no longer exists.", {

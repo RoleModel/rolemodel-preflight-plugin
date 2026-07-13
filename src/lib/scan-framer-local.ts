@@ -43,6 +43,40 @@ export function discoverNestedModuleUrls(source: string): string[] {
   return [...out];
 }
 
+function escapeRegex(value: string): string {
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function codeFileReferenceKeys(names: string[]): string[] {
+  const keys = new Set<string>();
+  for (const name of names) {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      continue;
+    }
+    keys.add(trimmed);
+    keys.add(trimmed.replace(/\.[cm]?[jt]sx?$/i, ""));
+  }
+  return [...keys].filter(Boolean).toSorted();
+}
+
+export function findCodeFileReferences(
+  source: string,
+  codeFileNames: string[]
+): string[] {
+  const references = new Set<string>();
+  for (const key of codeFileReferenceKeys(codeFileNames)) {
+    const pattern = new RegExp(
+      `(?:^|[/"'@])${escapeRegex(key)}(?:\\.[cm]?[jt]sx?|\\.js)?(?:$|[/"'?#])`,
+      "i"
+    );
+    if (pattern.test(source)) {
+      references.add(key);
+    }
+  }
+  return [...references].toSorted((a, b) => a.localeCompare(b));
+}
+
 export interface FetchedModuleScan {
   url: string;
   roots: string[];
@@ -50,6 +84,7 @@ export interface FetchedModuleScan {
   status?: number;
   locals: string[];
   missing: string[];
+  codeFileReferences: string[];
   error?: string;
 }
 
@@ -72,7 +107,7 @@ export interface CanvasInstanceForScan {
  */
 export async function scanModuleUrlsForFramerLocal(
   seedUrls: string[],
-  options?: { maxTotalFetches?: number }
+  options?: { codeFileNames?: string[]; maxTotalFetches?: number }
 ): Promise<ModuleScanResult> {
   const maxTotal = options?.maxTotalFetches ?? 600;
   const seen = new Set<string>();
@@ -115,7 +150,12 @@ export async function scanModuleUrlsForFramerLocal(
       const text = await res.text();
       const locals = findFramerLocalSpecifiers(text);
       const missing = findMissingBundledSpecifiers(text);
+      const codeFileReferences = findCodeFileReferences(
+        text,
+        options?.codeFileNames ?? []
+      );
       results.push({
+        codeFileReferences,
         locals,
         missing,
         ok: res.ok,
@@ -134,6 +174,7 @@ export async function scanModuleUrlsForFramerLocal(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       results.push({
+        codeFileReferences: [],
         error: message,
         locals: [],
         missing: [],
