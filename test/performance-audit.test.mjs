@@ -64,6 +64,10 @@ test("canvas image findings retain the image node for navigation", async () => {
 
   assert.equal(findings.length, 1);
   assert.equal(findings[0].canvasNodeId, "image-node-1");
+  assert.equal(
+    findings[0].canvasImageUrl,
+    "https://framerusercontent.com/images/hero.jpg"
+  );
 });
 
 test("PageSpeed audit maps mobile metrics and recommendations", async () => {

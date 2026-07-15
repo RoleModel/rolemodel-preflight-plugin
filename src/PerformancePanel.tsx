@@ -1,5 +1,5 @@
 import { framer } from "framer-plugin";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 
 import { ImageOptimizerPanel } from "./ImageOptimizerPanel";
 import {
@@ -34,6 +34,9 @@ function sortFindings(
 }
 
 export function PerformancePanel() {
+  const imageNavigationRef = useRef<Map<string, () => Promise<void>>>(
+    new Map()
+  );
   const [siteUrl, setSiteUrl] = useState(DEFAULT_SITE_URL);
   const [apiKey, setApiKey] = useState("");
   const [metrics, setMetrics] = useState<PerformanceMetrics>({});
@@ -84,6 +87,18 @@ export function PerformancePanel() {
             : []
         )
       );
+      imageNavigationRef.current = new Map(
+        frameNodes.flatMap((node) =>
+          node.backgroundImage
+            ? [
+                [
+                  node.id,
+                  () => node.navigateTo({ select: true, zoomIntoView: true }),
+                ] as const,
+              ]
+            : []
+        )
+      );
 
       setStatus("Running the published mobile PageSpeed audit…");
       try {
@@ -127,16 +142,35 @@ export function PerformancePanel() {
     await file.navigateTo();
   }, []);
 
-  const handleGoToImage = useCallback(async (nodeId: string) => {
-    const node = await framer.getNode(nodeId);
-    if (!node) {
-      await framer.notify("That image instance no longer exists.", {
-        variant: "error",
-      });
-      return;
-    }
-    await node.navigateTo({ select: true, zoomIntoView: true });
-  }, []);
+  const handleGoToImage = useCallback(
+    async (nodeId: string, imageUrl?: string) => {
+      const cachedNavigation = imageNavigationRef.current.get(nodeId);
+      if (cachedNavigation) {
+        try {
+          await cachedNavigation();
+          return;
+        } catch {
+          imageNavigationRef.current.delete(nodeId);
+        }
+      }
+
+      const frameNodes = await framer.getNodesWithType("FrameNode");
+      const currentNode = frameNodes.find(
+        (node) =>
+          node.id === nodeId ||
+          (imageUrl !== undefined && node.backgroundImage?.url === imageUrl)
+      );
+      if (!currentNode) {
+        await framer.notify(
+          "That image is not available in the current canvas scope. Run the audit again after opening its page or breakpoint.",
+          { variant: "error" }
+        );
+        return;
+      }
+      await currentNode.navigateTo({ select: true, zoomIntoView: true });
+    },
+    []
+  );
 
   const handleExternalReport = useCallback(() => {
     try {
@@ -234,7 +268,10 @@ export function PerformancePanel() {
                   <button
                     className="template-table__apply"
                     onClick={() =>
-                      void handleGoToImage(finding.canvasNodeId as string)
+                      void handleGoToImage(
+                        finding.canvasNodeId as string,
+                        finding.canvasImageUrl
+                      )
                     }
                     type="button"
                   >

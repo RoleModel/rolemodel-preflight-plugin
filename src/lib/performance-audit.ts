@@ -1,6 +1,7 @@
 export type PerformanceSeverity = "critical" | "warning" | "info";
 
 export interface PerformanceFinding {
+  canvasImageUrl?: string;
   canvasNodeId?: string;
   codeFilePath?: string;
   detail: string;
@@ -144,6 +145,7 @@ export function analyzeCanvasImages(
   return images
     .filter((image) => LEGACY_RASTER_PATTERN.test(image.url))
     .map((image) => ({
+      canvasImageUrl: image.url,
       canvasNodeId: image.id,
       detail: `${image.name?.trim() || "Image"} uses a PNG or JPEG source.`,
       id: `canvas-image-${image.id}`,
