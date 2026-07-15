@@ -138,6 +138,48 @@ p {
   color: var(--rmp-color-text-muted);
 }
 
+.optimizer-form {
+  display: grid;
+  gap: var(--op-space-x-small);
+}
+
+.optimizer-form label {
+  display: grid;
+  gap: var(--op-space-3x-small);
+  color: var(--rmp-color-text-muted);
+}
+
+.optimizer-form input[type="number"],
+.optimizer-form select {
+  width: 100%;
+  min-width: 0;
+  padding: var(--op-space-2x-small);
+  border: var(--op-border-width) solid var(--rmp-color-border);
+  border-radius: 6px;
+  background: var(--rmp-color-surface);
+  color: var(--rmp-color-text);
+  font: inherit;
+}
+
+.optimizer-form__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--op-space-2x-small);
+}
+
+.optimizer-form .optimizer-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--op-space-2x-small);
+}
+
+.optimizer-confirmation {
+  padding: var(--op-space-x-small);
+  border: var(--op-border-width) solid var(--rmp-color-border);
+  border-radius: 8px;
+  background: var(--rmp-color-surface-muted);
+}
+
 .report {
   max-width: 100%;
   margin: 0;

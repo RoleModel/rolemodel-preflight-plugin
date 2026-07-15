@@ -1,6 +1,7 @@
 import { framer } from "framer-plugin";
 import React, { useCallback, useMemo, useState } from "react";
 
+import { ImageOptimizerPanel } from "./ImageOptimizerPanel";
 import { formatCanvasInstanceReport } from "./lib/canvas-instances";
 import {
   findCodeFilePathDriftIssues,
@@ -64,7 +65,7 @@ interface ViolationAction {
   };
 }
 
-type ScanSection = "preflight" | "spacing";
+type ScanSection = "preflight" | "spacing" | "images";
 
 type OptionalCheckKey = keyof TeamPreflightOptions;
 
@@ -884,10 +885,15 @@ export function App() {
           <button className="btn" onClick={() => setSection("spacing")}>
             Spacing templates
           </button>
+          <button className="btn" onClick={() => setSection("images")}>
+            Image Optimizer
+          </button>
         </div>
       </header>
 
-      {section === "preflight" ? (
+      {section === "images" ? (
+        <ImageOptimizerPanel />
+      ) : section === "preflight" ? (
         <section className="panel">
           <div className="panel-topline">
             <span className="panel-label">Project checks</span>
