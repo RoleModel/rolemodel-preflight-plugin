@@ -3,6 +3,7 @@ import React, { useCallback, useMemo, useState } from "react";
 
 import { ImageOptimizerPanel } from "./ImageOptimizerPanel";
 import {
+  analyzeCanvasImages,
   analyzeCodePerformance,
   runPageSpeedAudit,
 } from "./lib/performance-audit";
@@ -61,13 +62,27 @@ export function PerformancePanel() {
       const normalizedUrl = normalizeSiteUrl(siteUrl);
       setSiteUrl(normalizedUrl);
 
-      const [codeFiles, componentInstances] = await Promise.all([
+      const [codeFiles, componentInstances, frameNodes] = await Promise.all([
         framer.getCodeFiles(),
         framer.getNodesWithType("ComponentInstanceNode"),
+        framer.getNodesWithType("FrameNode"),
       ]);
       const projectResult = analyzeCodePerformance(
         codeFiles.map((file) => ({ content: file.content, path: file.path })),
         componentInstances.length
+      );
+      const canvasImageFindings = analyzeCanvasImages(
+        frameNodes.flatMap((node) =>
+          node.backgroundImage
+            ? [
+                {
+                  id: node.id,
+                  name: node.name,
+                  url: node.backgroundImage.url,
+                },
+              ]
+            : []
+        )
       );
 
       setStatus("Running the published mobile PageSpeed audit…");
@@ -75,6 +90,7 @@ export function PerformancePanel() {
         const pageSpeedResult = await runPageSpeedAudit(normalizedUrl, apiKey);
         const combined = sortFindings([
           ...pageSpeedResult.findings,
+          ...canvasImageFindings,
           ...projectResult.findings,
         ]);
         setMetrics(pageSpeedResult.metrics);
@@ -84,7 +100,9 @@ export function PerformancePanel() {
         );
       } catch (error) {
         setMetrics({});
-        setFindings(sortFindings(projectResult.findings));
+        setFindings(
+          sortFindings([...canvasImageFindings, ...projectResult.findings])
+        );
         const message = error instanceof Error ? error.message : String(error);
         setStatus(
           `Project scan complete. PageSpeed was unavailable (${message}). Add an API key or open the external report; local findings are still shown.`
@@ -107,6 +125,17 @@ export function PerformancePanel() {
       return;
     }
     await file.navigateTo();
+  }, []);
+
+  const handleGoToImage = useCallback(async (nodeId: string) => {
+    const node = await framer.getNode(nodeId);
+    if (!node) {
+      await framer.notify("That image instance no longer exists.", {
+        variant: "error",
+      });
+      return;
+    }
+    await node.navigateTo({ select: true, zoomIntoView: true });
   }, []);
 
   const handleExternalReport = useCallback(() => {
@@ -201,7 +230,17 @@ export function PerformancePanel() {
                 <p>
                   <strong>Fix:</strong> {finding.recommendation}
                 </p>
-                {finding.codeFilePath ? (
+                {finding.canvasNodeId ? (
+                  <button
+                    className="template-table__apply"
+                    onClick={() =>
+                      void handleGoToImage(finding.canvasNodeId as string)
+                    }
+                    type="button"
+                  >
+                    Go to image
+                  </button>
+                ) : finding.codeFilePath ? (
                   <button
                     className="template-table__apply"
                     onClick={() =>

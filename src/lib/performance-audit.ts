@@ -1,6 +1,7 @@
 export type PerformanceSeverity = "critical" | "warning" | "info";
 
 export interface PerformanceFinding {
+  canvasNodeId?: string;
   codeFilePath?: string;
   detail: string;
   id: string;
@@ -30,6 +31,12 @@ export interface CodeFileSource {
   path: string;
 }
 
+export interface CanvasImageSource {
+  id: string;
+  name?: string | null;
+  url: string;
+}
+
 interface LighthouseAudit {
   details?: {
     items?: Record<string, unknown>[];
@@ -55,8 +62,7 @@ const HIDDEN_TEXT_PATTERN =
 const TEXT_ANIMATION_PATTERN = /(?:letter|word|text|title|heading|blur)/i;
 const LOAD_ANIMATION_PATTERN =
   /(?:blurTrigger\s*=\s*["']load["']|setTimeout\s*\([\s\S]{0,120}setShouldAnimate)/i;
-const RASTER_URL_PATTERN =
-  /https?:\/\/[^\s"')]+\.(?:png|jpe?g)(?:\?[^\s"')]*)?/gi;
+const LEGACY_RASTER_PATTERN = /\.(?:png|jpe?g)(?:\?|$)/i;
 
 function metric(audit: LighthouseAudit | undefined): string | undefined {
   return audit?.displayValue;
@@ -105,19 +111,6 @@ export function analyzeCodePerformance(
       });
     }
 
-    const rasterUrls = [...new Set(file.content.match(RASTER_URL_PATTERN))];
-    if (rasterUrls.length > 0) {
-      findings.push({
-        codeFilePath: file.path,
-        detail: `${rasterUrls.length} remote PNG/JPEG reference${rasterUrls.length === 1 ? "" : "s"} found.`,
-        id: `raster-${file.path}`,
-        recommendation:
-          "Convert photographic assets to WebP/AVIF and verify decorative images are deferred when below the fold.",
-        severity: "warning",
-        title: "Legacy raster assets in code",
-      });
-    }
-
     if (/from\s+["']three["']|three\.module|@react-three/i.test(file.content)) {
       findings.push({
         codeFilePath: file.path,
@@ -143,6 +136,22 @@ export function analyzeCodePerformance(
   }
 
   return { findings, metrics: {}, source: "project" };
+}
+
+export function analyzeCanvasImages(
+  images: readonly CanvasImageSource[]
+): PerformanceFinding[] {
+  return images
+    .filter((image) => LEGACY_RASTER_PATTERN.test(image.url))
+    .map((image) => ({
+      canvasNodeId: image.id,
+      detail: `${image.name?.trim() || "Image"} uses a PNG or JPEG source.`,
+      id: `canvas-image-${image.id}`,
+      recommendation:
+        "Convert photographic assets to WebP/AVIF and verify the responsive crop at each breakpoint.",
+      severity: "warning" as const,
+      title: "Legacy raster image instance",
+    }));
 }
 
 export async function runPageSpeedAudit(

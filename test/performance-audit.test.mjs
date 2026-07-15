@@ -40,13 +40,30 @@ test("project performance scan identifies risky code patterns", async () => {
 
   assert.deepEqual(
     result.findings.map((finding) => finding.id),
-    [
-      "hidden-text-Hero.tsx",
-      "raster-Hero.tsx",
-      "three-Hero.tsx",
-      "large-project-tree",
-    ]
+    ["hidden-text-Hero.tsx", "three-Hero.tsx", "large-project-tree"]
   );
+});
+
+test("canvas image findings retain the image node for navigation", async () => {
+  const { analyzeCanvasImages } = await loadModule(
+    "src/lib/performance-audit.ts"
+  );
+
+  const findings = analyzeCanvasImages([
+    {
+      id: "image-node-1",
+      name: "Hero photo",
+      url: "https://framerusercontent.com/images/hero.jpg",
+    },
+    {
+      id: "image-node-2",
+      name: "Optimized photo",
+      url: "https://framerusercontent.com/images/hero.webp",
+    },
+  ]);
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].canvasNodeId, "image-node-1");
 });
 
 test("PageSpeed audit maps mobile metrics and recommendations", async () => {
