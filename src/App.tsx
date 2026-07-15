@@ -1,7 +1,6 @@
 import { framer } from "framer-plugin";
 import React, { useCallback, useMemo, useState } from "react";
 
-import { ImageOptimizerPanel } from "./ImageOptimizerPanel";
 import { formatCanvasInstanceReport } from "./lib/canvas-instances";
 import {
   findCodeFilePathDriftIssues,
@@ -37,6 +36,7 @@ import type {
   TeamPreflightOptions,
   TextCandidate,
 } from "./lib/team-preflight";
+import { PerformancePanel } from "./PerformancePanel";
 
 interface DirectSyncFile {
   path: string;
@@ -65,7 +65,7 @@ interface ViolationAction {
   };
 }
 
-type ScanSection = "preflight" | "spacing" | "images";
+type ScanSection = "preflight" | "spacing" | "performance";
 
 type OptionalCheckKey = keyof TeamPreflightOptions;
 
@@ -885,14 +885,14 @@ export function App() {
           <button className="btn" onClick={() => setSection("spacing")}>
             Spacing templates
           </button>
-          <button className="btn" onClick={() => setSection("images")}>
-            Image Optimizer
+          <button className="btn" onClick={() => setSection("performance")}>
+            Performance
           </button>
         </div>
       </header>
 
-      {section === "images" ? (
-        <ImageOptimizerPanel />
+      {section === "performance" ? (
+        <PerformancePanel />
       ) : section === "preflight" ? (
         <section className="panel">
           <div className="panel-topline">
