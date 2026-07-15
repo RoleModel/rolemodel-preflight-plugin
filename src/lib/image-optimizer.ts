@@ -129,9 +129,7 @@ export async function optimizeCmsImage(
     return { afterBytes: beforeBytes, beforeBytes, skipped: true };
   }
   if (!SUPPORTED_SOURCE_TYPES.has(source.mimeType)) {
-    throw new Error(
-      `Unsupported source type ${source.mimeType || "unknown"} for ${candidate.item.slug}.`
-    );
+    return { afterBytes: beforeBytes, beforeBytes, skipped: true };
   }
 
   const sourceBlob = new Blob([source.bytes], { type: source.mimeType });

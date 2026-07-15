@@ -116,6 +116,7 @@ export function ImageOptimizerPanel() {
       );
       let optimizedCount = 0;
       let skippedCount = 0;
+      let failedCount = 0;
       let beforeBytes = 0;
       let afterBytes = 0;
 
@@ -124,23 +125,27 @@ export function ImageOptimizerPanel() {
         setStatus(
           `Optimizing ${index + 1} of ${candidates.length}: ${candidate.item.slug}…`
         );
-        const result = await optimizeCmsImage(candidate, {
-          maxDimension,
-          quality: quality / 100,
-          skipWebp,
-        });
-        beforeBytes += result.beforeBytes;
-        afterBytes += result.afterBytes;
-        if (result.skipped) {
-          skippedCount += 1;
-        } else {
-          optimizedCount += 1;
+        try {
+          const result = await optimizeCmsImage(candidate, {
+            maxDimension,
+            quality: quality / 100,
+            skipWebp,
+          });
+          beforeBytes += result.beforeBytes;
+          afterBytes += result.afterBytes;
+          if (result.skipped) {
+            skippedCount += 1;
+          } else {
+            optimizedCount += 1;
+          }
+        } catch {
+          failedCount += 1;
         }
       }
 
       const savedMb = Math.max(0, beforeBytes - afterBytes) / 1024 / 1024;
       setStatus(
-        `Complete: optimized ${optimizedCount}, skipped ${skippedCount}. Approximate reduction: ${savedMb.toFixed(2)} MB.`
+        `Complete: optimized ${optimizedCount}, skipped ${skippedCount}, failed ${failedCount}. Approximate reduction: ${savedMb.toFixed(2)} MB.`
       );
       setConfirmed(false);
       await framer.notify(`Optimized ${optimizedCount} CMS images as WebP.`, {
