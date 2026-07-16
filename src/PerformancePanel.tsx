@@ -1,5 +1,5 @@
 import { framer } from "framer-plugin";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 
 import { ImageOptimizerPanel } from "./ImageOptimizerPanel";
 import {
@@ -13,6 +13,26 @@ import type {
 } from "./lib/performance-audit";
 
 const DEFAULT_SITE_URL = "https://rolemodelsoftware.com/";
+const RUNTIME_SCAN_BATCH_SIZE = 40;
+
+interface AuditCoverage {
+  codeFiles: number;
+  componentInstances: number;
+  distinctModuleUrls: number;
+  frameImages: number;
+  runtimeErrors: number;
+  runtimeScanAvailable: boolean;
+}
+
+interface RuntimeErrorReader {
+  getRuntimeErrorForCodeComponentNode?: (
+    nodeId: string
+  ) => Promise<{ message: string; type: string } | null>;
+}
+
+interface PerformancePanelProps {
+  onOpenProjectCleanup?: () => void;
+}
 
 function normalizeSiteUrl(value: string): string {
   const trimmed = value.trim();
@@ -33,14 +53,52 @@ function sortFindings(
   );
 }
 
-export function PerformancePanel() {
-  const imageNavigationRef = useRef<Map<string, () => Promise<void>>>(
-    new Map()
-  );
+function buildCanvasTargets(
+  rows: readonly { id: string; label: string }[]
+): { id: string; label: string }[] {
+  const targets = new Map<string, string>();
+  for (const row of rows) {
+    if (!targets.has(row.id)) {
+      targets.set(row.id, row.label);
+    }
+  }
+  const labelTotals = new Map<string, number>();
+  for (const label of targets.values()) {
+    labelTotals.set(label, (labelTotals.get(label) ?? 0) + 1);
+  }
+  const labelIndexes = new Map<string, number>();
+  return [...targets].map(([id, label]) => {
+    const index = (labelIndexes.get(label) ?? 0) + 1;
+    labelIndexes.set(label, index);
+    return {
+      id,
+      label: (labelTotals.get(label) ?? 0) > 1 ? `${label} ${index}` : label,
+    };
+  });
+}
+
+async function resolveStableCanvasNodeId(
+  nodeId: string
+): Promise<string | null> {
+  let currentNode = await framer.getNode(nodeId);
+  let depth = 0;
+
+  while (currentNode?.isReplica && depth < 12) {
+    currentNode = await currentNode.getParent();
+    depth += 1;
+  }
+
+  return currentNode?.id ?? null;
+}
+
+export function PerformancePanel({
+  onOpenProjectCleanup,
+}: PerformancePanelProps) {
   const [siteUrl, setSiteUrl] = useState(DEFAULT_SITE_URL);
   const [apiKey, setApiKey] = useState("");
   const [metrics, setMetrics] = useState<PerformanceMetrics>({});
   const [findings, setFindings] = useState<PerformanceFinding[]>([]);
+  const [coverage, setCoverage] = useState<AuditCoverage | null>(null);
   const [status, setStatus] = useState(
     "Run an audit to inspect the published mobile experience and project code."
   );
@@ -65,14 +123,171 @@ export function PerformancePanel() {
       const normalizedUrl = normalizeSiteUrl(siteUrl);
       setSiteUrl(normalizedUrl);
 
-      const [codeFiles, componentInstances, frameNodes] = await Promise.all([
-        framer.getCodeFiles(),
-        framer.getNodesWithType("ComponentInstanceNode"),
-        framer.getNodesWithType("FrameNode"),
-      ]);
+      const [codeFiles, componentInstances, frameNodes, webPages] =
+        await Promise.all([
+          framer.getCodeFiles(),
+          framer.getNodesWithType("ComponentInstanceNode"),
+          framer.getNodesWithType("FrameNode"),
+          framer.getNodesWithType("WebPageNode"),
+        ]);
       const projectResult = analyzeCodePerformance(
-        codeFiles.map((file) => ({ content: file.content, path: file.path })),
-        componentInstances.length
+        codeFiles.map((file) => ({ content: file.content, path: file.path }))
+      );
+      setStatus(
+        `Checking runtime errors across ${componentInstances.length.toLocaleString()} component instances…`
+      );
+      const runtimeRows: {
+        instance: (typeof componentInstances)[number];
+        message: string;
+        type: string;
+      }[] = [];
+      const runtimeErrorReader = (framer as unknown as RuntimeErrorReader)
+        .getRuntimeErrorForCodeComponentNode;
+      if (runtimeErrorReader) {
+        for (
+          let index = 0;
+          index < componentInstances.length;
+          index += RUNTIME_SCAN_BATCH_SIZE
+        ) {
+          const batch = componentInstances.slice(
+            index,
+            index + RUNTIME_SCAN_BATCH_SIZE
+          );
+          const results = await Promise.all(
+            batch.map(async (instance) => {
+              try {
+                const runtimeError = await runtimeErrorReader.call(
+                  framer,
+                  instance.id
+                );
+                return runtimeError ? { instance, runtimeError } : null;
+              } catch {
+                return null;
+              }
+            })
+          );
+          for (const result of results) {
+            if (!result) {
+              continue;
+            }
+            runtimeRows.push({
+              instance: result.instance,
+              message: result.runtimeError.message,
+              type: result.runtimeError.type,
+            });
+          }
+        }
+      }
+
+      const runtimeGroups = new Map<string, typeof runtimeRows>();
+      for (const row of runtimeRows) {
+        const key = `${row.instance.insertURL ?? row.instance.componentIdentifier}\n${row.message}`;
+        const group = runtimeGroups.get(key) ?? [];
+        group.push(row);
+        runtimeGroups.set(key, group);
+      }
+      const runtimeFindings = await Promise.all(
+        [...runtimeGroups.entries()].map(async ([key, rows], groupIndex) => {
+          const resolvedIds = await Promise.all(
+            rows.map((row) =>
+              resolveStableCanvasNodeId(row.instance.id).catch(() => null)
+            )
+          );
+          const stableIds = [
+            ...new Set(resolvedIds.filter((id): id is string => id !== null)),
+          ];
+          const first = rows[0];
+          const canvasTargets = buildCanvasTargets(
+            rows.flatMap((row, index) => {
+              const id = resolvedIds[index];
+              if (!id) {
+                return [];
+              }
+              return [
+                {
+                  id,
+                  label:
+                    row.instance.name?.trim() ||
+                    row.instance.componentName?.trim() ||
+                    `Affected instance ${index + 1}`,
+                },
+              ];
+            })
+          );
+          const message = first?.message ?? "Unknown runtime error";
+          const missingLocalModule =
+            /#framer\/local\/codeFile|Unable to resolve specifier/i.test(
+              message
+            );
+          return {
+            canvasInstanceCount: stableIds.length || rows.length,
+            canvasNodeId: stableIds[0],
+            canvasTargets,
+            canvasTargetLabel: "Go to affected instance",
+            detail: `${first?.instance.componentName ?? first?.instance.name ?? "Code component"}: ${message}`,
+            id: `runtime-${groupIndex}-${key.slice(0, 80)}`,
+            recommendation: missingLocalModule
+              ? "Replace the affected legacy instance with the current published component, or republish its package after replacing project-local imports with published URLs."
+              : "Go to the affected instance, then inspect or replace its source component. Use the runtime message above as the concrete failure to resolve.",
+            severity: "critical" as const,
+            title: `${first?.type ?? "Runtime error"} in mounted component`,
+          };
+        })
+      );
+      const actionableProjectFindings = await Promise.all(
+        projectResult.findings.map(async (finding) => {
+          if (!finding.codeFilePath) {
+            return finding;
+          }
+          const codeFile = codeFiles.find(
+            (file) => file.path === finding.codeFilePath
+          );
+          const insertUrls = new Set(
+            codeFile?.exports.flatMap((codeExport) =>
+              codeExport.type === "component" ? [codeExport.insertURL] : []
+            )
+          );
+          const matchingInstances = componentInstances.filter(
+            (instance) =>
+              instance.insertURL !== null && insertUrls.has(instance.insertURL)
+          );
+          const resolvedInstanceIds = await Promise.all(
+            matchingInstances.map((instance) =>
+              resolveStableCanvasNodeId(instance.id).catch(() => null)
+            )
+          );
+          const stableInstanceIds = [
+            ...new Set(
+              resolvedInstanceIds.filter((id): id is string => id !== null)
+            ),
+          ];
+          const canvasTargets = buildCanvasTargets(
+            matchingInstances.flatMap((instance, index) => {
+              const id = resolvedInstanceIds[index];
+              if (!id) {
+                return [];
+              }
+              return [
+                {
+                  id,
+                  label:
+                    instance.name?.trim() ||
+                    instance.componentName?.trim() ||
+                    `Affected instance ${index + 1}`,
+                },
+              ];
+            })
+          );
+          return {
+            ...finding,
+            canvasInstanceCount: stableInstanceIds.length || undefined,
+            canvasNodeId: stableInstanceIds[0],
+            canvasTargets,
+            canvasTargetLabel: stableInstanceIds[0]
+              ? "Go to affected instance"
+              : undefined,
+          };
+        })
       );
       const canvasImageFindings = analyzeCanvasImages(
         frameNodes.flatMap((node) =>
@@ -87,26 +302,37 @@ export function PerformancePanel() {
             : []
         )
       );
-      imageNavigationRef.current = new Map(
-        frameNodes.flatMap((node) =>
-          node.backgroundImage
-            ? [
-                [
-                  node.id,
-                  () => node.navigateTo({ select: true, zoomIntoView: true }),
-                ] as const,
-              ]
-            : []
-        )
-      );
-
+      setCoverage({
+        codeFiles: codeFiles.length,
+        componentInstances: componentInstances.length,
+        distinctModuleUrls: new Set(
+          componentInstances
+            .map((instance) => instance.insertURL)
+            .filter((url): url is string => url !== null)
+        ).size,
+        frameImages: frameNodes.filter((node) => node.backgroundImage).length,
+        runtimeErrors: runtimeRows.length,
+        runtimeScanAvailable: runtimeErrorReader !== undefined,
+      });
       setStatus("Running the published mobile PageSpeed audit…");
       try {
         const pageSpeedResult = await runPageSpeedAudit(normalizedUrl, apiKey);
+        const auditedPath = new URL(normalizedUrl).pathname.replace(/\/$/, "");
+        const auditedPage = webPages.find(
+          (page) => (page.path ?? "").replace(/\/$/, "") === auditedPath
+        );
+        const actionablePageSpeedFindings = pageSpeedResult.findings.map(
+          (finding) => ({
+            ...finding,
+            pageNodeId: auditedPage?.id,
+            pagePath: auditedPage?.path ?? undefined,
+          })
+        );
         const combined = sortFindings([
-          ...pageSpeedResult.findings,
+          ...actionablePageSpeedFindings,
           ...canvasImageFindings,
-          ...projectResult.findings,
+          ...runtimeFindings,
+          ...actionableProjectFindings,
         ]);
         setMetrics(pageSpeedResult.metrics);
         setFindings(combined);
@@ -116,7 +342,11 @@ export function PerformancePanel() {
       } catch (error) {
         setMetrics({});
         setFindings(
-          sortFindings([...canvasImageFindings, ...projectResult.findings])
+          sortFindings([
+            ...canvasImageFindings,
+            ...runtimeFindings,
+            ...actionableProjectFindings,
+          ])
         );
         const message = error instanceof Error ? error.message : String(error);
         setStatus(
@@ -126,6 +356,7 @@ export function PerformancePanel() {
     } catch (error) {
       setMetrics({});
       setFindings([]);
+      setCoverage(null);
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
       setWorking(false);
@@ -142,32 +373,63 @@ export function PerformancePanel() {
     await file.navigateTo();
   }, []);
 
+  const handleGoToNode = useCallback(async (nodeId: string, label: string) => {
+    try {
+      const stableNodeId = await resolveStableCanvasNodeId(nodeId);
+      if (!stableNodeId) {
+        throw new Error("Node not found");
+      }
+      await framer.navigateTo(stableNodeId, {
+        select: true,
+        zoomIntoView: true,
+      });
+    } catch {
+      await framer.notify(
+        `${label} is no longer available. Run the audit again to refresh its location.`,
+        { variant: "error" }
+      );
+    }
+  }, []);
+
   const handleGoToImage = useCallback(
     async (nodeId: string, imageUrl?: string) => {
-      const cachedNavigation = imageNavigationRef.current.get(nodeId);
-      if (cachedNavigation) {
-        try {
-          await cachedNavigation();
+      try {
+        const stableNodeId = await resolveStableCanvasNodeId(nodeId);
+        if (stableNodeId) {
+          await framer.navigateTo(stableNodeId, {
+            select: true,
+            zoomIntoView: true,
+          });
           return;
-        } catch {
-          imageNavigationRef.current.delete(nodeId);
         }
+      } catch {
+        // The canvas may have regenerated a replica ID since the audit.
       }
 
-      const frameNodes = await framer.getNodesWithType("FrameNode");
-      const currentNode = frameNodes.find(
-        (node) =>
-          node.id === nodeId ||
-          (imageUrl !== undefined && node.backgroundImage?.url === imageUrl)
-      );
-      if (!currentNode) {
-        await framer.notify(
-          "That image is not available in the current canvas scope. Run the audit again after opening its page or breakpoint.",
-          { variant: "error" }
+      try {
+        const frameNodes = await framer.getNodesWithType("FrameNode");
+        const currentNode = frameNodes.find(
+          (node) =>
+            imageUrl !== undefined && node.backgroundImage?.url === imageUrl
         );
-        return;
+        const stableNodeId = currentNode
+          ? await resolveStableCanvasNodeId(currentNode.id)
+          : null;
+        if (stableNodeId) {
+          await framer.navigateTo(stableNodeId, {
+            select: true,
+            zoomIntoView: true,
+          });
+          return;
+        }
+      } catch {
+        // Report one controlled error below after both navigation attempts.
       }
-      await currentNode.navigateTo({ select: true, zoomIntoView: true });
+
+      await framer.notify(
+        "That image instance changed after the audit. Run the audit again to refresh its canvas location.",
+        { variant: "error" }
+      );
     },
     []
   );
@@ -204,6 +466,22 @@ export function PerformancePanel() {
           hidden first-frame text, heavy runtimes, and legacy image URLs.
         </p>
 
+        {onOpenProjectCleanup ? (
+          <div className="performance-actions">
+            <button
+              className="btn btn--primary btn--medium"
+              onClick={onOpenProjectCleanup}
+              type="button"
+            >
+              Open full project cleanup
+            </button>
+            <span className="panel-muted">
+              Scan broken imports, component modules, layout drift, links,
+              placeholders, and canvas instances.
+            </span>
+          </div>
+        ) : null}
+
         <div className="performance-form">
           <label>
             <span>Published site URL</span>
@@ -233,6 +511,52 @@ export function PerformancePanel() {
           <span className="panel-muted">{status}</span>
         </div>
 
+        {coverage ? (
+          <div className="performance-coverage">
+            <div className="panel-topline">
+              <span className="panel-label">Scan coverage</span>
+              <span className="panel-muted">Current branch and canvas</span>
+            </div>
+            <div className="performance-metrics">
+              <div className="performance-metric">
+                <span>Code files</span>
+                <strong>{coverage.codeFiles.toLocaleString()}</strong>
+              </div>
+              <div className="performance-metric">
+                <span>Instances</span>
+                <strong>{coverage.componentInstances.toLocaleString()}</strong>
+              </div>
+              <div className="performance-metric">
+                <span>Module URLs</span>
+                <strong>{coverage.distinctModuleUrls.toLocaleString()}</strong>
+              </div>
+              <div className="performance-metric">
+                <span>Image layers</span>
+                <strong>{coverage.frameImages.toLocaleString()}</strong>
+              </div>
+              <div className="performance-metric">
+                <span>Runtime errors</span>
+                <strong>{coverage.runtimeErrors.toLocaleString()}</strong>
+              </div>
+            </div>
+            {!coverage.runtimeScanAvailable ? (
+              <p className="panel-muted">
+                This Framer host does not expose mounted component runtime
+                errors to plugins. Code, module URL, image, and PageSpeed scans
+                still ran, but host-console errors cannot be attributed to an
+                instance from this plugin session.
+              </p>
+            ) : coverage.runtimeErrors === 0 ? (
+              <p className="panel-muted">
+                No mounted component reported a runtime error through Framer’s
+                plugin API. A missing-module error visible only in the host
+                console is likely retained in Framer’s stale module graph;
+                reload the project before auditing again.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {metricEntries.some(([, value]) => value !== undefined) ? (
           <div className="performance-metrics" aria-label="PageSpeed metrics">
             {metricEntries.map(([label, value]) => (
@@ -261,33 +585,88 @@ export function PerformancePanel() {
                   <strong>{finding.title}</strong>
                 </div>
                 <p>{finding.detail}</p>
+                {finding.codeFilePath ? (
+                  <p>
+                    <strong>Source:</strong> {finding.codeFilePath}
+                  </p>
+                ) : null}
                 <p>
                   <strong>Fix:</strong> {finding.recommendation}
                 </p>
-                {finding.canvasNodeId ? (
-                  <button
-                    className="template-table__apply"
-                    onClick={() =>
-                      void handleGoToImage(
-                        finding.canvasNodeId as string,
-                        finding.canvasImageUrl
-                      )
-                    }
-                    type="button"
-                  >
-                    Go to image
-                  </button>
-                ) : finding.codeFilePath ? (
-                  <button
-                    className="template-table__apply"
-                    onClick={() =>
-                      void handleOpenFile(finding.codeFilePath as string)
-                    }
-                    type="button"
-                  >
-                    Open {finding.codeFilePath}
-                  </button>
-                ) : null}
+                <div className="performance-finding__actions">
+                  {finding.canvasNodeId && finding.canvasImageUrl ? (
+                    <button
+                      className="template-table__apply"
+                      onClick={() =>
+                        void handleGoToImage(
+                          finding.canvasNodeId as string,
+                          finding.canvasImageUrl
+                        )
+                      }
+                      type="button"
+                    >
+                      Go to image
+                    </button>
+                  ) : null}
+                  {finding.canvasTargets?.map((target, index) => (
+                    <button
+                      className="template-table__apply"
+                      key={target.id}
+                      onClick={() =>
+                        void handleGoToNode(
+                          target.id,
+                          `Affected instance ${index + 1}`
+                        )
+                      }
+                      title={target.label}
+                      type="button"
+                    >
+                      Go to {target.label}
+                    </button>
+                  ))}
+                  {!finding.canvasTargets?.length &&
+                  finding.canvasNodeId &&
+                  finding.canvasTargetLabel ? (
+                    <button
+                      className="template-table__apply"
+                      onClick={() =>
+                        void handleGoToNode(
+                          finding.canvasNodeId as string,
+                          "That component instance"
+                        )
+                      }
+                      type="button"
+                    >
+                      {finding.canvasTargetLabel}
+                    </button>
+                  ) : null}
+                  {finding.codeFilePath ? (
+                    <button
+                      className="template-table__apply"
+                      onClick={() =>
+                        void handleOpenFile(finding.codeFilePath as string)
+                      }
+                      type="button"
+                    >
+                      Open {finding.codeFilePath}
+                    </button>
+                  ) : null}
+                  {finding.pageNodeId ? (
+                    <button
+                      className="template-table__apply"
+                      onClick={() =>
+                        void handleGoToNode(
+                          finding.pageNodeId as string,
+                          "That page"
+                        )
+                      }
+                      type="button"
+                    >
+                      Go to page
+                      {finding.pagePath ? ` (${finding.pagePath})` : ""}
+                    </button>
+                  ) : null}
+                </div>
               </article>
             ))}
           </div>

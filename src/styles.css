@@ -222,6 +222,12 @@ p {
   gap: var(--op-space-2x-small);
 }
 
+.performance-finding__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--op-space-2x-small);
+}
+
 .performance-severity {
   padding: var(--op-space-3x-small) var(--op-space-2x-small);
   border-radius: 999px;

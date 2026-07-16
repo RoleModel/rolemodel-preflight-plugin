@@ -23,24 +23,21 @@ test("project performance scan identifies risky code patterns", async () => {
     "src/lib/performance-audit.ts"
   );
 
-  const result = analyzeCodePerformance(
-    [
-      {
-        content: `
+  const result = analyzeCodePerformance([
+    {
+      content: `
           import * as THREE from "three"
           const titleAnimation = { initial: { opacity: 0 } }
           const blurTrigger = "load"
           const image = "https://assets.example.com/hero.jpg"
         `,
-        path: "Hero.tsx",
-      },
-    ],
-    1300
-  );
+      path: "Hero.tsx",
+    },
+  ]);
 
   assert.deepEqual(
     result.findings.map((finding) => finding.id),
-    ["hidden-text-Hero.tsx", "three-Hero.tsx", "large-project-tree"]
+    ["hidden-text-Hero.tsx", "three-Hero.tsx"]
   );
 });
 
@@ -52,21 +49,26 @@ test("canvas image findings retain the image node for navigation", async () => {
   const findings = analyzeCanvasImages([
     {
       id: "image-node-1",
-      name: "Hero photo",
+      name: "Framer responsive photo",
       url: "https://framerusercontent.com/images/hero.jpg",
     },
     {
       id: "image-node-2",
-      name: "Optimized photo",
-      url: "https://framerusercontent.com/images/hero.webp",
+      name: "External hero photo",
+      url: "https://assets.example.com/hero.jpg",
+    },
+    {
+      id: "image-node-3",
+      name: "Repeated external hero photo",
+      url: "https://assets.example.com/hero.jpg",
     },
   ]);
 
   assert.equal(findings.length, 1);
-  assert.equal(findings[0].canvasNodeId, "image-node-1");
+  assert.equal(findings[0].canvasNodeId, "image-node-2");
   assert.equal(
     findings[0].canvasImageUrl,
-    "https://framerusercontent.com/images/hero.jpg"
+    "https://assets.example.com/hero.jpg"
   );
 });
 

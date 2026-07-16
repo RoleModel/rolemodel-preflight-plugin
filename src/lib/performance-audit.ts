@@ -2,11 +2,16 @@ export type PerformanceSeverity = "critical" | "warning" | "info";
 
 export interface PerformanceFinding {
   canvasImageUrl?: string;
+  canvasInstanceCount?: number;
   canvasNodeId?: string;
+  canvasTargets?: { id: string; label: string }[];
+  canvasTargetLabel?: string;
   codeFilePath?: string;
   detail: string;
   id: string;
   recommendation: string;
+  pageNodeId?: string;
+  pagePath?: string;
   severity: PerformanceSeverity;
   title: string;
 }
@@ -64,6 +69,23 @@ const TEXT_ANIMATION_PATTERN = /(?:letter|word|text|title|heading|blur)/i;
 const LOAD_ANIMATION_PATTERN =
   /(?:blurTrigger\s*=\s*["']load["']|setTimeout\s*\([\s\S]{0,120}setShouldAnimate)/i;
 const LEGACY_RASTER_PATTERN = /\.(?:png|jpe?g)(?:\?|$)/i;
+const FRAMER_IMAGE_HOST_PATTERN = /(?:^|\.)framerusercontent\.com$/i;
+
+function isActionableLegacyRaster(url: string): boolean {
+  if (!LEGACY_RASTER_PATTERN.test(url)) {
+    return false;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    return (
+      (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") &&
+      !FRAMER_IMAGE_HOST_PATTERN.test(parsedUrl.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
 
 function metric(audit: LighthouseAudit | undefined): string | undefined {
   return audit?.displayValue;
@@ -89,8 +111,7 @@ function pageSpeedFinding(
 }
 
 export function analyzeCodePerformance(
-  files: readonly CodeFileSource[],
-  canvasNodeCount: number
+  files: readonly CodeFileSource[]
 ): PerformanceAuditResult {
   const findings: PerformanceFinding[] = [];
 
@@ -125,35 +146,29 @@ export function analyzeCodePerformance(
     }
   }
 
-  if (canvasNodeCount > 1200) {
-    findings.push({
-      detail: `${canvasNodeCount.toLocaleString()} canvas nodes were found in the project scan.`,
-      id: "large-project-tree",
-      recommendation:
-        "Audit repeated decorative layers and deeply nested component instances on the landing page.",
-      severity: "warning",
-      title: "Large project tree",
-    });
-  }
-
   return { findings, metrics: {}, source: "project" };
 }
 
 export function analyzeCanvasImages(
   images: readonly CanvasImageSource[]
 ): PerformanceFinding[] {
-  return images
-    .filter((image) => LEGACY_RASTER_PATTERN.test(image.url))
-    .map((image) => ({
-      canvasImageUrl: image.url,
-      canvasNodeId: image.id,
-      detail: `${image.name?.trim() || "Image"} uses a PNG or JPEG source.`,
-      id: `canvas-image-${image.id}`,
-      recommendation:
-        "Convert photographic assets to WebP/AVIF and verify the responsive crop at each breakpoint.",
-      severity: "warning" as const,
-      title: "Legacy raster image instance",
-    }));
+  const uniqueImages = new Map<string, CanvasImageSource>();
+  for (const image of images) {
+    if (isActionableLegacyRaster(image.url) && !uniqueImages.has(image.url)) {
+      uniqueImages.set(image.url, image);
+    }
+  }
+
+  return [...uniqueImages.values()].map((image) => ({
+    canvasImageUrl: image.url,
+    canvasNodeId: image.id,
+    detail: `${image.name?.trim() || "Image"} uses a PNG or JPEG source.`,
+    id: `canvas-image-${image.id}`,
+    recommendation:
+      "Convert photographic assets to WebP/AVIF and verify the responsive crop at each breakpoint.",
+    severity: "warning" as const,
+    title: "Legacy raster image instance",
+  }));
 }
 
 export async function runPageSpeedAudit(

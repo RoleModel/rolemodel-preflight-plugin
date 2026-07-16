@@ -880,7 +880,7 @@ export function App() {
         </div>
         <div className="header-actions">
           <button className="btn" onClick={() => setSection("preflight")}>
-            Preflight
+            Project cleanup
           </button>
           <button className="btn" onClick={() => setSection("spacing")}>
             Spacing templates
@@ -892,17 +892,19 @@ export function App() {
       </header>
 
       {section === "performance" ? (
-        <PerformancePanel />
+        <PerformancePanel
+          onOpenProjectCleanup={() => setSection("preflight")}
+        />
       ) : section === "preflight" ? (
         <section className="panel">
           <div className="panel-topline">
-            <span className="panel-label">Project checks</span>
+            <span className="panel-label">Project cleanup scan</span>
             <button
               className="btn btn--primary btn--medium"
               onClick={() => void handleRunPreflight()}
               disabled={scanning}
             >
-              {scanning ? "Running…" : "Run Preflight"}
+              {scanning ? "Running…" : "Run full cleanup scan"}
             </button>
           </div>
 
