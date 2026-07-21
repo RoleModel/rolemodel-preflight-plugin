@@ -18,24 +18,24 @@ export const spacingTemplates: SpacingTemplate[] = [
     breakpoints: [
       {
         breakpoint: "mobile",
-        paddingY: 40,
-        paddingX: 28,
         gap: 12,
         maxWidth: null,
+        paddingX: 28,
+        paddingY: 40,
       },
       {
         breakpoint: "tablet",
-        paddingY: 40,
-        paddingX: 40,
         gap: 24,
         maxWidth: 768,
+        paddingX: 40,
+        paddingY: 40,
       },
       {
         breakpoint: "desktop",
-        paddingY: 80,
-        paddingX: 40,
         gap: 24,
         maxWidth: 1200,
+        paddingX: 40,
+        paddingY: 80,
       },
     ],
     description:
@@ -45,9 +45,9 @@ export const spacingTemplates: SpacingTemplate[] = [
   },
 ];
 
-export function formatSpacingTemplateSummary(
+export const formatSpacingTemplateSummary = (
   template: SpacingTemplate
-): string {
+): string => {
   const lines = [
     `${template.name} spacing template`,
     template.description,
@@ -59,13 +59,12 @@ export function formatSpacingTemplateSummary(
   ];
 
   return lines.join("\n");
-}
+};
 
-export function formatSpacingTemplateJson(template: SpacingTemplate): string {
-  return `${JSON.stringify(template, null, 2)}\n`;
-}
+export const formatSpacingTemplateJson = (template: SpacingTemplate): string =>
+  `${JSON.stringify(template, null, 2)}\n`;
 
-export function formatSpacingTemplateCss(template: SpacingTemplate): string {
+export const formatSpacingTemplateCss = (template: SpacingTemplate): string => {
   const lines = [
     `:root {`,
     `  --rm-spacing-template: "${template.name}";`,
@@ -97,4 +96,4 @@ export function formatSpacingTemplateCss(template: SpacingTemplate): string {
   ];
 
   return `${lines.join("\n")}\n`;
-}
+};

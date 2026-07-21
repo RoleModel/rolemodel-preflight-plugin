@@ -5,9 +5,10 @@ import type {
   FieldDataEntry,
   FieldDataInput,
   ManagedCollection,
+  ManagedCollectionFieldInput,
   ManagedCollectionItemInput,
-} from "framer-plugin";
-import { framer } from "framer-plugin";
+} from "@framer/plugin";
+import { framer } from "@framer/plugin";
 
 import { fetchManifest, normalizeManifestUrl } from "./manifest";
 import type { Manifest, ManifestComponent } from "./manifest";
@@ -48,43 +49,43 @@ const STATUS_CASE_ID_BY_STATUS = {
   stable: STATUS_CASES[0].id,
 } as const;
 
-export const managedCollectionFields = [
-  { id: FIELD_IDS.title, name: "Title", type: "string" as const },
+export const managedCollectionFields: ManagedCollectionFieldInput[] = [
+  { id: FIELD_IDS.title, name: "Title", type: "string" },
   {
     id: FIELD_IDS.componentKey,
     name: "Component Key",
-    type: "string" as const,
+    type: "string",
   },
-  { id: FIELD_IDS.slot, name: "Slot", type: "number" as const },
-  { id: FIELD_IDS.category, name: "Category", type: "string" as const },
+  { id: FIELD_IDS.slot, name: "Slot", type: "number" },
+  { id: FIELD_IDS.category, name: "Category", type: "string" },
   {
     id: FIELD_IDS.description,
     name: "Description",
-    type: "formattedText" as const,
+    type: "formattedText",
     userEditable: true,
   },
   {
     cases: [...STATUS_CASES],
     id: FIELD_IDS.status,
     name: "Status",
-    type: "enum" as const,
+    type: "enum",
   },
-  { id: FIELD_IDS.tags, name: "Tags", type: "string" as const },
+  { id: FIELD_IDS.tags, name: "Tags", type: "string" },
   // Framer URL should be a link field for clickable behavior in CMS UI.
-  { id: FIELD_IDS.framerUrl, name: "Framer URL", type: "link" as any },
-  { id: FIELD_IDS.propCount, name: "Prop Count", type: "string" as const },
-  { id: FIELD_IDS.propsJson, name: "Props JSON", type: "string" as const },
+  { id: FIELD_IDS.framerUrl, name: "Framer URL", type: "link" },
+  { id: FIELD_IDS.propCount, name: "Prop Count", type: "string" },
+  { id: FIELD_IDS.propsJson, name: "Props JSON", type: "string" },
   {
     id: FIELD_IDS.propsMetaJson,
     name: "Props Meta JSON",
-    type: "string" as const,
+    type: "string",
   },
   {
     id: FIELD_IDS.isCanvas,
     name: "Canvas Component",
-    type: "boolean" as const,
+    type: "boolean",
   },
-] as const;
+];
 
 export interface SyncResult {
   manifest: Manifest;
@@ -134,11 +135,10 @@ const EXPECTED_REGULAR_FIELD_TYPES: Record<
   title: ["string"],
 } as const;
 
-function latestUrl(component: ManifestComponent): string {
-  return component.framerUrl ?? "";
-}
+const latestUrl = (component: ManifestComponent): string =>
+  component.framerUrl ?? "";
 
-function normalizeFramerCdnUrl(url: unknown): string | null {
+const normalizeFramerCdnUrl = (url: unknown): string | null => {
   if (typeof url !== "string") {
     return null;
   }
@@ -158,17 +158,16 @@ function normalizeFramerCdnUrl(url: unknown): string | null {
     return null;
   }
   return trimmed;
-}
+};
 
-function loadManifestForSync(manifestUrl: string): Promise<Manifest> {
+const loadManifestForSync = (manifestUrl: string): Promise<Manifest> =>
   // Strict pipeline:
   // regenerate -> public/component-manifest.json -> CMS sync
   // Do not hydrate/augment URL values from any other source during sync.
-  return fetchManifest(manifestUrl);
-}
+  fetchManifest(manifestUrl);
 
-function propsJson(component: ManifestComponent): string {
-  return JSON.stringify(
+const propsJson = (component: ManifestComponent): string =>
+  JSON.stringify(
     (component.propDocs ?? []).map(({ name, type, description, required }) => ({
       description,
       name,
@@ -176,13 +175,14 @@ function propsJson(component: ManifestComponent): string {
       type,
     }))
   );
-}
 
-function propsMetaJson(component: ManifestComponent): string {
-  return JSON.stringify(component.propDocs ?? []);
-}
+const propsMetaJson = (component: ManifestComponent): string =>
+  JSON.stringify(component.propDocs ?? []);
 
-function assertManifestHasUsableUrls(manifest: Manifest, manifestUrl: string) {
+const assertManifestHasUsableUrls = (
+  manifest: Manifest,
+  manifestUrl: string
+): void => {
   const components = Object.values(manifest.components ?? {});
   if (components.length === 0) {
     return;
@@ -202,12 +202,12 @@ function assertManifestHasUsableUrls(manifest: Manifest, manifestUrl: string) {
       ].join(" ")
     );
   }
-}
+};
 
-function applyManifestSyncScope(
+const applyManifestSyncScope = (
   manifest: Manifest,
   options?: SyncOptions
-): Manifest {
+): Manifest => {
   const scopedKeys = [
     ...new Set(
       (options?.goldenPathKeys ?? [])
@@ -258,30 +258,29 @@ function applyManifestSyncScope(
 
   return {
     ...manifest,
-    categories: Array.from(
-      new Set(
+    categories: [
+      ...new Set(
         Object.values(scopedComponents).map((component) => component.category)
-      )
-    ).sort(),
+      ),
+    ].toSorted(),
     components: scopedComponents,
     totalComponents: Object.keys(scopedComponents).length,
   };
-}
+};
 
-function slugify(value: string): string {
-  return value
+const slugify = (value: string): string =>
+  value
     .trim()
     .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, "-")
-    .replaceAll(/^-+|-+$/g, "")
+    .replaceAll(/[^a-z0-9]+/gu, "-")
+    .replaceAll(/^-+|-+$/gu, "")
     .slice(0, 64);
-}
 
-function ensureUniqueSlug(
+const ensureUniqueSlug = (
   base: string,
   usedSlugs: Set<string>,
   fallbackSeed: string
-): string {
+): string => {
   const normalizedBase = slugify(base) || slugify(fallbackSeed) || "component";
   if (!usedSlugs.has(normalizedBase)) {
     usedSlugs.add(normalizedBase);
@@ -304,55 +303,43 @@ function ensureUniqueSlug(
   const fallback = `${normalizedBase.slice(0, 58)}-${Date.now().toString().slice(-5)}`;
   usedSlugs.add(fallback);
   return fallback;
-}
+};
 
-function stringEntry(value: unknown) {
-  return {
-    type: "string" as const,
-    value: typeof value === "string" ? value : String(value ?? ""),
-  };
-}
+const stringEntry = (value: unknown) => ({
+  type: "string" as const,
+  value: typeof value === "string" ? value : String(value ?? ""),
+});
 
-function linkEntry(value: unknown) {
-  return {
-    type: "link" as any,
-    value: typeof value === "string" ? value : String(value ?? ""),
-  };
-}
+const linkEntry = (value: unknown) => ({
+  type: "link" as const,
+  value: typeof value === "string" ? value : String(value ?? ""),
+});
 
-function booleanEntry(value: unknown) {
-  return {
-    type: "boolean" as const,
-    value: Boolean(value),
-  };
-}
+const booleanEntry = (value: unknown) => ({
+  type: "boolean" as const,
+  value: Boolean(value),
+});
 
-function numberEntry(value: unknown) {
-  return {
-    type: "number" as const,
-    value: Number(value) || 0,
-  };
-}
+const numberEntry = (value: unknown) => ({
+  type: "number" as const,
+  value: Number(value) || 0,
+});
 
-function enumEntry(value: string) {
-  return {
-    type: "enum" as const,
-    value,
-  };
-}
+const enumEntry = (value: string) => ({
+  type: "enum" as const,
+  value,
+});
 
-function formattedTextEntry(value: unknown) {
-  return {
-    contentType: "markdown" as const,
-    type: "formattedText" as const,
-    value: typeof value === "string" ? value : String(value ?? ""),
-  };
-}
+const formattedTextEntry = (value: unknown) => ({
+  contentType: "markdown" as const,
+  type: "formattedText" as const,
+  value: typeof value === "string" ? value : String(value ?? ""),
+});
 
-function componentToCollectionItem(
+const componentToCollectionItem = (
   component: ManifestComponent,
   slot: number
-): ManagedCollectionItemInput {
+): ManagedCollectionItemInput => {
   const fieldData: FieldDataInput = {
     [FIELD_IDS.title]: stringEntry(component.displayName),
     [FIELD_IDS.componentKey]: stringEntry(component.key),
@@ -373,12 +360,12 @@ function componentToCollectionItem(
     id: component.key,
     slug: slugify(component.key),
   };
-}
+};
 
-function normalizeCategory(value: string | undefined): string {
+const normalizeCategory = (value: string | undefined): string => {
   const trimmed = String(value ?? "").trim();
   return trimmed.length > 0 ? trimmed : "Uncategorized";
-}
+};
 
 interface SlotAssignmentPlan {
   slotByKey: Map<string, number>;
@@ -386,10 +373,10 @@ interface SlotAssignmentPlan {
   slotCollisionCategories: string[];
 }
 
-function buildCategorySlotPlan(
+const buildCategorySlotPlan = (
   components: ManifestComponent[],
   options?: { strictSlotSync?: boolean }
-): SlotAssignmentPlan {
+): SlotAssignmentPlan => {
   const strict = options?.strictSlotSync === true;
   const grouped = new Map<string, ManifestComponent[]>();
   for (const component of components) {
@@ -413,26 +400,26 @@ function buildCategorySlotPlan(
       slotCollisionCount += sorted.length - 30;
       slotCollisionCategories.add(category);
     }
-    sorted.forEach((component, index) => {
+    for (const [index, component] of sorted.entries()) {
       slotByKey.set(component.key, (index % 30) + 1);
-    });
+    }
   }
 
   return {
     slotByKey,
-    slotCollisionCategories: Array.from(slotCollisionCategories).sort((a, b) =>
+    slotCollisionCategories: [...slotCollisionCategories].toSorted((a, b) =>
       a.localeCompare(b)
     ),
     slotCollisionCount,
   };
-}
+};
 
-function componentToRegularFieldData(
+const componentToRegularFieldData = (
   component: ManifestComponent,
   slot: number,
   fieldIds: Record<string, string>,
   fieldTypes: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>>
-): FieldDataInput {
+): FieldDataInput => {
   const descriptionEntry =
     fieldTypes.description === "formattedText"
       ? formattedTextEntry(component.description)
@@ -465,86 +452,28 @@ function componentToRegularFieldData(
   }
 
   return fieldData;
-}
+};
 
-function normalizeRegularFieldDataForCollection(
-  fieldData: FieldDataInput,
-  fieldIds: Record<keyof typeof REGULAR_FIELD_NAMES, string>,
-  fieldTypes: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>>
-): FieldDataInput {
-  const normalized: FieldDataInput = { ...fieldData };
-  const keys = Object.keys(
-    REGULAR_FIELD_NAMES
-  ) as (keyof typeof REGULAR_FIELD_NAMES)[];
-
-  for (const key of keys) {
-    const fieldId = fieldIds[key];
-    const fieldType = fieldTypes[key] ?? "string";
-    const entry = normalized[fieldId] as FieldDataEntry | undefined;
-
-    if (fieldType === "multiCollectionReference") {
-      const rawValue =
-        entry && typeof entry === "object" && "value" in entry
-          ? (entry as { value?: unknown }).value
-          : undefined;
-      const values = Array.isArray(rawValue)
-        ? rawValue.filter(
-            (value): value is string =>
-              typeof value === "string" && value.trim().length > 0
-          )
-        : [];
-      normalized[fieldId] = {
-        type: "multiCollectionReference",
-        value: values,
-      } as any;
-      continue;
-    }
-
-    if (fieldType === "boolean") {
-      const rawValue =
-        entry && typeof entry === "object" && "value" in entry
-          ? (entry as { value?: unknown }).value
-          : undefined;
-      normalized[fieldId] = booleanEntry(rawValue);
-      continue;
-    }
-
-    if (fieldType === "number") {
-      const rawValue =
-        entry && typeof entry === "object" && "value" in entry
-          ? (entry as { value?: unknown }).value
-          : undefined;
-      normalized[fieldId] = numberEntry(rawValue);
-      continue;
-    }
-
-    if (fieldType === "formattedText") {
-      const rawValue =
-        entry && typeof entry === "object" && "value" in entry
-          ? (entry as { value?: unknown }).value
-          : undefined;
-      normalized[fieldId] = formattedTextEntry(
-        typeof rawValue === "string" ? rawValue : extractStringFieldValue(entry)
-      );
-      continue;
-    }
-
-    if (fieldType === "link") {
-      const rawValue = readFramerUrlFromFieldEntry(entry);
-      normalized[fieldId] = linkEntry(rawValue);
-      continue;
-    }
-
-    // Default to string-compatible payloads for enum/string fields.
-    normalized[fieldId] = stringEntry(extractStringFieldValue(entry));
+const extractStringFieldValue = (entry: FieldDataEntry | undefined): string => {
+  if (!entry || typeof entry !== "object") {
+    return "";
   }
+  if ("value" in entry) {
+    const { value } = entry as { value?: unknown };
+    if (typeof value === "string") {
+      return value;
+    }
+    if (value === undefined || value === null) {
+      return "";
+    }
+    return String(value);
+  }
+  return "";
+};
 
-  return normalized;
-}
-
-function readFramerUrlFromFieldEntry(
+const readFramerUrlFromFieldEntry = (
   entry: FieldDataEntry | undefined
-): string {
+): string => {
   if (!entry || typeof entry !== "object") {
     return "";
   }
@@ -564,9 +493,81 @@ function readFramerUrlFromFieldEntry(
 
   const raw = extractStringFieldValue(entry).trim();
   return normalizeFramerCdnUrl(raw) ?? "";
-}
+};
 
-function fieldNameToKey(name: string): keyof typeof REGULAR_FIELD_NAMES | null {
+const readEntryRawValue = (entry: FieldDataEntry | undefined): unknown =>
+  entry && typeof entry === "object" && "value" in entry
+    ? (entry as { value?: unknown }).value
+    : undefined;
+
+const normalizeMultiCollectionReferenceEntry = (
+  entry: FieldDataEntry | undefined
+) => {
+  const rawValue = readEntryRawValue(entry);
+  const values = Array.isArray(rawValue)
+    ? rawValue.filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0
+      )
+    : [];
+  return {
+    type: "multiCollectionReference" as const,
+    value: values,
+  };
+};
+
+const normalizeFieldEntryForType = (
+  fieldType: string,
+  entry: FieldDataEntry | undefined
+) => {
+  switch (fieldType) {
+    case "multiCollectionReference": {
+      return normalizeMultiCollectionReferenceEntry(entry);
+    }
+    case "boolean": {
+      return booleanEntry(readEntryRawValue(entry));
+    }
+    case "number": {
+      return numberEntry(readEntryRawValue(entry));
+    }
+    case "formattedText": {
+      const rawValue = readEntryRawValue(entry);
+      return formattedTextEntry(
+        typeof rawValue === "string" ? rawValue : extractStringFieldValue(entry)
+      );
+    }
+    case "link": {
+      return linkEntry(readFramerUrlFromFieldEntry(entry));
+    }
+    default: {
+      return stringEntry(extractStringFieldValue(entry));
+    }
+  }
+};
+
+const normalizeRegularFieldDataForCollection = (
+  fieldData: FieldDataInput,
+  fieldIds: Record<keyof typeof REGULAR_FIELD_NAMES, string>,
+  fieldTypes: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>>
+): FieldDataInput => {
+  const normalized: FieldDataInput = { ...fieldData };
+  const keys = Object.keys(
+    REGULAR_FIELD_NAMES
+  ) as (keyof typeof REGULAR_FIELD_NAMES)[];
+
+  for (const key of keys) {
+    const fieldId = fieldIds[key];
+    const fieldType = fieldTypes[key] ?? "string";
+    const entry = normalized[fieldId] as FieldDataEntry | undefined;
+    normalized[fieldId] = normalizeFieldEntryForType(fieldType, entry);
+  }
+
+  return normalized;
+};
+
+const fieldNameToKey = (
+  name: string
+): keyof typeof REGULAR_FIELD_NAMES | null => {
   const cleaned = String(name ?? "")
     .trim()
     .toLowerCase();
@@ -579,24 +580,21 @@ function fieldNameToKey(name: string): keyof typeof REGULAR_FIELD_NAMES | null {
     }
   }
   return null;
-}
+};
 
-function isPrimaryFieldName(
+const isPrimaryFieldName = (
   key: keyof typeof REGULAR_FIELD_NAMES,
   name: string
-): boolean {
-  return (
-    String(name ?? "")
-      .trim()
-      .toLowerCase() === REGULAR_FIELD_NAMES[key].toLowerCase()
-  );
-}
+): boolean =>
+  String(name ?? "")
+    .trim()
+    .toLowerCase() === REGULAR_FIELD_NAMES[key].toLowerCase();
 
-function pickPreferredField(
+const pickPreferredField = (
   current: Field | undefined,
   candidate: Field,
   key: keyof typeof REGULAR_FIELD_NAMES
-): Field {
+): Field => {
   if (!current) {
     return candidate;
   }
@@ -606,36 +604,17 @@ function pickPreferredField(
     return candidate;
   }
   return current;
-}
+};
 
-function extractStringFieldValue(entry: FieldDataEntry | undefined): string {
-  if (!entry || typeof entry !== "object") {
-    return "";
-  }
-  if ("value" in entry) {
-    const { value } = entry as { value?: unknown };
-    if (typeof value === "string") {
-      return value;
-    }
-    if (value === undefined || value === null) {
-      return "";
-    }
-    return String(value);
-  }
-  return "";
-}
+const normalizeTagValue = (value: string): string => value.trim().toLowerCase();
 
-function normalizeTagValue(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function tagLookupKeys(value: string): string[] {
+const tagLookupKeys = (value: string): string[] => {
   const normalized = normalizeTagValue(value);
   const slug = slugify(value);
   return [...new Set([normalized, slug])];
-}
+};
 
-async function createTagReferenceResolver(collectionId: string) {
+const createTagReferenceResolver = async (collectionId: string) => {
   const tagCollection = await framer.getCollection(collectionId);
   if (!tagCollection) {
     throw new Error(
@@ -687,7 +666,7 @@ async function createTagReferenceResolver(collectionId: string) {
     usedSlugs.clear();
     const items = await tagCollection.getItems();
     for (const item of items) {
-      indexItem(item as any);
+      indexItem(item);
     }
   };
 
@@ -753,19 +732,22 @@ async function createTagReferenceResolver(collectionId: string) {
 
     return [...new Set(ids)];
   };
+};
+
+interface IncompatiblePrimaryField {
+  name: string;
+  foundType: string;
+  expectedType: string;
 }
 
-async function ensureRegularCollectionFields(collection: Collection): Promise<{
-  fieldIds: Record<keyof typeof REGULAR_FIELD_NAMES, string>;
-  fieldTypes: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>>;
-}> {
-  const existingFields = await collection.getFields();
+const classifyExistingFields = (
+  existingFields: Field[]
+): {
+  byKey: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, Field>>;
+  incompatiblePrimaryFields: IncompatiblePrimaryField[];
+} => {
   const byKey: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, Field>> = {};
-  const incompatiblePrimaryFields: {
-    name: string;
-    foundType: string;
-    expectedType: string;
-  }[] = [];
+  const incompatiblePrimaryFields: IncompatiblePrimaryField[] = [];
 
   for (const field of existingFields) {
     const key = fieldNameToKey(field.name);
@@ -790,18 +772,29 @@ async function ensureRegularCollectionFields(collection: Collection): Promise<{
     byKey[key] = pickPreferredField(byKey[key], field, key);
   }
 
-  if (incompatiblePrimaryFields.length > 0) {
-    const detail = incompatiblePrimaryFields
-      .map(
-        (field) =>
-          `${field.name} (found ${field.foundType}, expected ${field.expectedType})`
-      )
-      .join(", ");
-    throw new Error(
-      `Collection has incompatible field types for required RoleModel fields: ${detail}. Rename or delete these fields (or create a fresh collection) and sync again.`
-    );
-  }
+  return { byKey, incompatiblePrimaryFields };
+};
 
+const assertNoIncompatiblePrimaryFields = (
+  incompatiblePrimaryFields: IncompatiblePrimaryField[]
+): void => {
+  if (incompatiblePrimaryFields.length === 0) {
+    return;
+  }
+  const detail = incompatiblePrimaryFields
+    .map(
+      (field) =>
+        `${field.name} (found ${field.foundType}, expected ${field.expectedType})`
+    )
+    .join(", ");
+  throw new Error(
+    `Collection has incompatible field types for required RoleModel fields: ${detail}. Rename or delete these fields (or create a fresh collection) and sync again.`
+  );
+};
+
+const buildMissingFieldDefinitions = (
+  byKey: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, Field>>
+): CreateField[] => {
   const missing: CreateField[] = [];
   const addString = (key: keyof typeof REGULAR_FIELD_NAMES) =>
     missing.push({ name: REGULAR_FIELD_NAMES[key], type: "string" });
@@ -813,7 +806,7 @@ async function ensureRegularCollectionFields(collection: Collection): Promise<{
     addString("componentKey");
   }
   if (!byKey.slot) {
-    missing.push({ type: "number", name: REGULAR_FIELD_NAMES.slot } as any);
+    missing.push({ name: REGULAR_FIELD_NAMES.slot, type: "number" });
   }
   if (!byKey.category) {
     addString("category");
@@ -833,8 +826,8 @@ async function ensureRegularCollectionFields(collection: Collection): Promise<{
   if (!byKey.framerUrl) {
     missing.push({
       name: REGULAR_FIELD_NAMES.framerUrl,
-      type: "link" as any,
-    } as any);
+      type: "link",
+    });
   }
   if (!byKey.propCount) {
     addString("propCount");
@@ -849,19 +842,16 @@ async function ensureRegularCollectionFields(collection: Collection): Promise<{
     missing.push({ name: REGULAR_FIELD_NAMES.isCanvas, type: "boolean" });
   }
 
-  if (missing.length > 0) {
-    await collection.addFields(missing);
-  }
+  return missing;
+};
 
-  const refreshedFields = await collection.getFields();
-  const fieldIds: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>> =
-    {};
-  const fieldTypes: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>> =
-    {};
+const selectPreferredFieldsByKey = (
+  fields: Field[]
+): Partial<Record<keyof typeof REGULAR_FIELD_NAMES, Field>> => {
   const selectedFields: Partial<
     Record<keyof typeof REGULAR_FIELD_NAMES, Field>
   > = {};
-  for (const field of refreshedFields) {
+  for (const field of fields) {
     const key = fieldNameToKey(field.name);
     if (!key) {
       continue;
@@ -871,6 +861,19 @@ async function ensureRegularCollectionFields(collection: Collection): Promise<{
     }
     selectedFields[key] = pickPreferredField(selectedFields[key], field, key);
   }
+  return selectedFields;
+};
+
+const buildFieldIdsAndTypes = (
+  selectedFields: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, Field>>
+): {
+  fieldIds: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>>;
+  fieldTypes: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>>;
+} => {
+  const fieldIds: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>> =
+    {};
+  const fieldTypes: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>> =
+    {};
 
   for (const [key, field] of Object.entries(selectedFields) as [
     keyof typeof REGULAR_FIELD_NAMES,
@@ -880,6 +883,12 @@ async function ensureRegularCollectionFields(collection: Collection): Promise<{
     fieldTypes[key] = String(field.type);
   }
 
+  return { fieldIds, fieldTypes };
+};
+
+const assertAllRequiredFieldsPresent = (
+  fieldIds: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>>
+): void => {
   const requiredKeys = Object.keys(
     REGULAR_FIELD_NAMES
   ) as (keyof typeof REGULAR_FIELD_NAMES)[];
@@ -891,18 +900,40 @@ async function ensureRegularCollectionFields(collection: Collection): Promise<{
       );
     }
   }
+};
+
+const ensureRegularCollectionFields = async (
+  collection: Collection
+): Promise<{
+  fieldIds: Record<keyof typeof REGULAR_FIELD_NAMES, string>;
+  fieldTypes: Partial<Record<keyof typeof REGULAR_FIELD_NAMES, string>>;
+}> => {
+  const existingFields = await collection.getFields();
+  const { byKey, incompatiblePrimaryFields } =
+    classifyExistingFields(existingFields);
+  assertNoIncompatiblePrimaryFields(incompatiblePrimaryFields);
+
+  const missing = buildMissingFieldDefinitions(byKey);
+  if (missing.length > 0) {
+    await collection.addFields(missing);
+  }
+
+  const refreshedFields = await collection.getFields();
+  const selectedFields = selectPreferredFieldsByKey(refreshedFields);
+  const { fieldIds, fieldTypes } = buildFieldIdsAndTypes(selectedFields);
+  assertAllRequiredFieldsPresent(fieldIds);
 
   return {
     fieldIds: fieldIds as Record<keyof typeof REGULAR_FIELD_NAMES, string>,
     fieldTypes,
   };
-}
+};
 
-export async function syncManagedCollectionFromManifest(
+export const syncManagedCollectionFromManifest = async (
   collection: ManagedCollection,
   manifestUrlInput: string,
   options?: SyncOptions
-): Promise<SyncResult> {
+): Promise<SyncResult> => {
   const manifestUrl = normalizeManifestUrl(manifestUrlInput);
   const manifest = applyManifestSyncScope(
     await loadManifestForSync(manifestUrl),
@@ -941,13 +972,13 @@ export async function syncManagedCollectionFromManifest(
     slotCollisionCount: slotPlan.slotCollisionCount,
     syncedItemCount: items.length,
   };
-}
+};
 
-export async function syncRegularCollectionFromManifest(
+export const syncRegularCollectionFromManifest = async (
   collection: Collection,
   manifestUrlInput: string,
   options?: SyncOptions
-): Promise<SyncResult> {
+): Promise<SyncResult> => {
   const manifestUrl = normalizeManifestUrl(manifestUrlInput);
   const manifest = applyManifestSyncScope(
     await loadManifestForSync(manifestUrl),
@@ -1051,13 +1082,14 @@ export async function syncRegularCollectionFromManifest(
             ? linkEntry(existingItem.framerUrl)
             : stringEntry(existingItem.framerUrl);
       }
-      if (fieldTypes.tags === "multiCollectionReference") {
-        if (resolveTagReferences) {
-          fieldData[fieldIds.tags] = {
-            type: "multiCollectionReference",
-            value: await resolveTagReferences(component.tags),
-          } as any;
-        }
+      if (
+        fieldTypes.tags === "multiCollectionReference" &&
+        resolveTagReferences
+      ) {
+        fieldData[fieldIds.tags] = {
+          type: "multiCollectionReference" as const,
+          value: await resolveTagReferences(component.tags),
+        };
       }
       return {
         ...(existingItem ? { id: existingItem.id } : {}),
@@ -1097,4 +1129,4 @@ export async function syncRegularCollectionFromManifest(
     slotCollisionCount: slotPlan.slotCollisionCount,
     syncedItemCount: components.length,
   };
-}
+};

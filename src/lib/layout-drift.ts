@@ -21,7 +21,7 @@ export interface LayoutDriftIssue {
   height?: string;
 }
 
-function stringValue(value: unknown): string {
+const stringValue = (value: unknown): string => {
   if (typeof value === "number") {
     return String(value);
   }
@@ -29,19 +29,22 @@ function stringValue(value: unknown): string {
     return value.trim();
   }
   return "";
-}
+};
 
-function numericValue(value: unknown): number | null {
+const numericValue = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
-  if (typeof value === "string" && /^-?\d+(?:\.\d+)?px?$/.test(value.trim())) {
+  if (typeof value === "string" && /^-?\d+(?:\.\d+)?px?$/u.test(value.trim())) {
+    // These strings always carry a trailing unit suffix (e.g. "120px");
+    // Number() would return NaN where parseFloat correctly strips the suffix.
+    // oxlint-disable-next-line unicorn/prefer-number-coercion
     return Number.parseFloat(value);
   }
   return null;
-}
+};
 
-function isFillLike(value: unknown): boolean {
+const isFillLike = (value: unknown): boolean => {
   const normalized = stringValue(value).toLowerCase();
   return (
     normalized === "1fr" ||
@@ -49,29 +52,25 @@ function isFillLike(value: unknown): boolean {
     normalized === "fill" ||
     normalized === "stretch"
   );
-}
+};
 
-function nodeLabel(node: LayoutNodeSummary): string {
-  return (
-    node.componentName ??
-    node.componentIdentifier ??
-    node.name ??
-    `${node.type} ${node.id}`
-  );
-}
+const nodeLabel = (node: LayoutNodeSummary): string =>
+  node.componentName ??
+  node.componentIdentifier ??
+  node.name ??
+  `${node.type} ${node.id}`;
 
-function isMediaComponent(node: LayoutNodeSummary): boolean {
+const isMediaComponent = (node: LayoutNodeSummary): boolean => {
   const label = `${node.componentName ?? ""} ${node.componentIdentifier ?? ""} ${node.name ?? ""}`;
-  return /(?:vimeo|video|player|embed|iframe|media)/i.test(label);
-}
+  return /(?:vimeo|video|player|embed|iframe|media)/iu.test(label);
+};
 
-function compactText(text: string): string {
-  return text.replaceAll(/\s+/g, " ").trim();
-}
+const compactText = (text: string): string =>
+  text.replaceAll(/\s+/gu, " ").trim();
 
-export function findLayoutDriftIssues(
+export const findLayoutDriftIssues = (
   nodes: LayoutNodeSummary[]
-): LayoutDriftIssue[] {
+): LayoutDriftIssue[] => {
   const issues: LayoutDriftIssue[] = [];
 
   for (const node of nodes) {
@@ -138,9 +137,9 @@ export function findLayoutDriftIssues(
   }
 
   return issues;
-}
+};
 
-export function formatLayoutDriftReport(issues: LayoutDriftIssue[]): string {
+export const formatLayoutDriftReport = (issues: LayoutDriftIssue[]): string => {
   const lines = ["Layout drift"];
 
   if (issues.length === 0) {
@@ -158,11 +157,13 @@ export function formatLayoutDriftReport(issues: LayoutDriftIssue[]): string {
     ]
       .filter(Boolean)
       .join(", ");
-    lines.push(`  • ${issue.title}${size ? ` (${size})` : ""}`);
-    lines.push(`      ${issue.reason}`);
+    lines.push(
+      `  • ${issue.title}${size ? ` (${size})` : ""}`,
+      `      ${issue.reason}`
+    );
   }
   if (issues.length > 40) {
     lines.push(`  … +${issues.length - 40} more layout issue(s)`);
   }
   return lines.join("\n");
-}
+};

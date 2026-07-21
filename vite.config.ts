@@ -1,6 +1,7 @@
 import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -32,14 +33,23 @@ const componentOverridesPath = path.resolve(
 );
 const repoScanRoots = [
   path.resolve(repoRoot, "src"),
-  path.resolve(repoRoot, "framer-plugin", "src"),
+  path.resolve(repoRoot, "@framer/plugin", "src"),
   path.resolve(repoRoot, "README.md"),
   path.resolve(repoRoot, "vite.config.ts"),
   path.resolve(repoRoot, "src", "tests"),
 ];
 
-function getHttpsServerOptions() {
+const execFileAsync = promisify(execFile);
+
+const normalizePathKey = (value: string) =>
+  String(value ?? "")
+    .replaceAll("\\", "/")
+    .replace(/^\/+/u, "");
+
+const getHttpsServerOptions = () => {
   if (!fs.existsSync(httpsCertPath) || !fs.existsSync(httpsKeyPath)) {
+    fs.mkdirSync(path.dirname(httpsCertPath), { recursive: true });
+    fs.mkdirSync(path.dirname(httpsKeyPath), { recursive: true });
     try {
       execFileSync(
         "mkcert",
@@ -84,23 +94,31 @@ function getHttpsServerOptions() {
         { stdio: "ignore" }
       );
     } catch {
-      // Keep local dev on HTTPS even when cert generation fails.
-      // This avoids protocol mismatches when Framer requests https://localhost:* URLs.
-      return true;
+      // fall through to the existence check below
     }
+  }
+
+  if (!fs.existsSync(httpsCertPath) || !fs.existsSync(httpsKeyPath)) {
+    // `https: true` would start a TLS server with no certificate, and every
+    // client would fail with ERR_SSL_VERSION_OR_CIPHER_MISMATCH. Fail loudly
+    // instead so the missing cert is fixable.
+    throw new Error(
+      `Could not generate a localhost TLS certificate at ${httpsCertPath}. ` +
+        "Install mkcert (brew install mkcert && mkcert -install) or openssl, " +
+        "or point FRAMER_PLUGIN_CERT / FRAMER_PLUGIN_KEY at an existing cert pair."
+    );
   }
 
   return {
     cert: fs.readFileSync(httpsCertPath),
     key: fs.readFileSync(httpsKeyPath),
   };
-}
+};
 
-function normalizeName(value: string): string {
-  return value.replaceAll(/[^a-z0-9]/gi, "").toLowerCase();
-}
+const normalizeName = (value: string): string =>
+  value.replaceAll(/[^a-z0-9]/giu, "").toLowerCase();
 
-function normalizeUrlCandidate(value: unknown): string | null {
+const normalizeUrlCandidate = (value: unknown): string | null => {
   const next = String(value ?? "").trim();
   if (!next) {
     return null;
@@ -112,18 +130,15 @@ function normalizeUrlCandidate(value: unknown): string | null {
     return null;
   }
   return next;
-}
+};
 
-function urlSlug(url: string): string {
-  return (
-    url
-      .split("/")
-      .pop()
-      ?.replace(/\.js.*$/, "") ?? ""
-  );
-}
+const urlSlug = (url: string): string =>
+  url
+    .split("/")
+    .pop()
+    ?.replace(/\.js.*$/u, "") ?? "";
 
-function scoreUrlForComponentKey(componentKey: string, url: string): number {
+const scoreUrlForComponentKey = (componentKey: string, url: string): number => {
   const normalizedKey = normalizeName(componentKey);
   const normalizedSlug = normalizeName(urlSlug(url));
   let score = 0;
@@ -144,12 +159,12 @@ function scoreUrlForComponentKey(componentKey: string, url: string): number {
   }
 
   return score;
-}
+};
 
-function selectPreferredUrlForComponentKey(
+const selectPreferredUrlForComponentKey = (
   componentKey: string,
   urls: unknown[]
-): string | null {
+): string | null => {
   const deduped = [
     ...new Set(
       (Array.isArray(urls) ? urls : [])
@@ -179,11 +194,11 @@ function selectPreferredUrlForComponentKey(
     });
 
   return ranked[0]?.url ?? deduped.at(-1) ?? null;
-}
+};
 
-function normalizeComponentUrlsMap(
+const normalizeComponentUrlsMap = (
   componentUrls: Record<string, string[]>
-): Record<string, string[]> {
+): Record<string, string[]> => {
   const next: Record<string, string[]> = {};
 
   for (const [componentKey, urls] of Object.entries(componentUrls ?? {})) {
@@ -195,9 +210,9 @@ function normalizeComponentUrlsMap(
   }
 
   return next;
-}
+};
 
-function collectTextFiles(entryPath: string, acc: string[] = []): string[] {
+const collectTextFiles = (entryPath: string, acc: string[] = []): string[] => {
   if (!fs.existsSync(entryPath)) {
     return acc;
   }
@@ -221,15 +236,15 @@ function collectTextFiles(entryPath: string, acc: string[] = []): string[] {
   }
 
   return acc;
-}
+};
 
-function discoverComponentUrls(
+const discoverComponentUrls = (
   componentKey: string,
   displayName?: string
-): string[] {
+): string[] => {
   const pathCandidates = [componentKey, displayName]
     .filter((value): value is string => Boolean(value))
-    .map((value) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    .map((value) => value.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&"));
 
   const targetNames = new Set(
     [componentKey, displayName]
@@ -239,32 +254,32 @@ function discoverComponentUrls(
 
   const discovered = new Set<string>();
   const files = repoScanRoots.flatMap((entry) => collectTextFiles(entry));
-  const urlRegex = /https:\/\/framer\.com\/m\/[^"'`\s)]+/g;
+  const urlRegex = /https:\/\/framer\.com\/m\/[^"'`\s)]+/gu;
   const importRegex =
-    /import\s+([A-Za-z0-9_$]+)\s+from\s+["'](https:\/\/framer\.com\/m\/[^"']+)["']/g;
+    /import\s+(?<importedName>[A-Za-z0-9_$]+)\s+from\s+["'](?<url>https:\/\/framer\.com\/m\/[^"']+)["']/gu;
 
   for (const filePath of files) {
     const source = fs.readFileSync(filePath, "utf-8");
 
     for (const match of source.matchAll(importRegex)) {
-      const importedName = normalizeName(match[1] ?? "");
-      const url = match[2];
+      const importedName = normalizeName(match.groups?.importedName ?? "");
+      const url = match.groups?.url;
       if (url && targetNames.has(importedName)) {
         discovered.add(url);
       }
     }
 
     for (const url of source.match(urlRegex) ?? []) {
-      const escapedUrl = url.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const escapedUrl = url.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
       const localPathRegex = new RegExp(
         `${escapedUrl}["']\\s*:\\s*["'][^"']*\\/(${pathCandidates.join("|")})["']`,
-        "i"
+        "iu"
       );
       const slug =
         url
           .split("/")
           .pop()
-          ?.replace(/\.js.*$/, "") ?? "";
+          ?.replace(/\.js.*$/u, "") ?? "";
       const normalizedSlug = normalizeName(slug);
 
       if (
@@ -277,9 +292,16 @@ function discoverComponentUrls(
   }
 
   return [...discovered];
-}
+};
 
-function readFramerComponentUrls(): Record<string, string[]> {
+const writeFramerComponentUrls = (componentUrls: Record<string, string[]>) => {
+  fs.writeFileSync(
+    framerComponentUrlsPath,
+    `${JSON.stringify(componentUrls, null, 2)}\n`
+  );
+};
+
+const readFramerComponentUrls = (): Record<string, string[]> => {
   if (!fs.existsSync(framerComponentUrlsPath)) {
     return {};
   }
@@ -294,21 +316,14 @@ function readFramerComponentUrls(): Record<string, string[]> {
   }
 
   return normalized;
-}
+};
 
-function latestKnownFramerUrl(componentKey: string): string | null {
+const latestKnownFramerUrl = (componentKey: string): string | null => {
   const urls = readFramerComponentUrls()[componentKey] ?? [];
   return urls.length > 0 ? (urls.at(-1) ?? null) : null;
-}
+};
 
-function writeFramerComponentUrls(componentUrls: Record<string, string[]>) {
-  fs.writeFileSync(
-    framerComponentUrlsPath,
-    `${JSON.stringify(componentUrls, null, 2)}\n`
-  );
-}
-
-function readFramerProjectComponents(): Record<
+const readFramerProjectComponents = (): Record<
   string,
   {
     key: string;
@@ -324,7 +339,7 @@ function readFramerProjectComponents(): Record<
     path?: string;
     syncPath?: string;
   }
-> {
+> => {
   if (!fs.existsSync(framerProjectComponentsPath)) {
     return {};
   }
@@ -346,9 +361,9 @@ function readFramerProjectComponents(): Record<
       path?: string;
     }
   >;
-}
+};
 
-function writeFramerProjectComponents(
+const writeFramerProjectComponents = (
   components: Record<
     string,
     {
@@ -366,28 +381,26 @@ function writeFramerProjectComponents(
       syncPath?: string;
     }
   >
-) {
+) => {
   fs.writeFileSync(
     framerProjectComponentsPath,
     `${JSON.stringify(components, null, 2)}\n`
   );
-}
+};
 
-function stripJsonComments(source: string): string {
-  return source
+const stripJsonComments = (source: string): string =>
+  source
     .split("\n")
     .filter((line) => !line.trim().startsWith("//"))
     .join("\n");
-}
 
-function normalizeIdentifier(value: string): string {
-  return String(value ?? "")
+const normalizeIdentifier = (value: string): string =>
+  String(value ?? "")
     .trim()
     .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, "");
-}
+    .replaceAll(/[^a-z0-9]+/gu, "");
 
-function readManifestCanvasMap(): Map<string, boolean> {
+const readManifestCanvasMap = (): Map<string, boolean> => {
   if (!fs.existsSync(componentManifestPath)) {
     return new Map();
   }
@@ -419,9 +432,9 @@ function readManifestCanvasMap(): Map<string, boolean> {
   } catch {
     return new Map();
   }
-}
+};
 
-function readComponentOverrides(): Record<string, Record<string, unknown>> {
+const readComponentOverrides = (): Record<string, Record<string, unknown>> => {
   if (!fs.existsSync(componentOverridesPath)) {
     return {};
   }
@@ -429,18 +442,18 @@ function readComponentOverrides(): Record<string, Record<string, unknown>> {
     string,
     Record<string, unknown>
   >;
-}
+};
 
-function writeComponentOverrides(
+const writeComponentOverrides = (
   overrides: Record<string, Record<string, unknown>>
-) {
+) => {
   fs.writeFileSync(
     componentOverridesPath,
     `${JSON.stringify(overrides, null, 2)}\n`
   );
-}
+};
 
-function listFilesRecursive(rootPath: string, acc: string[] = []): string[] {
+const listFilesRecursive = (rootPath: string, acc: string[] = []): string[] => {
   if (!fs.existsSync(rootPath)) {
     return acc;
   }
@@ -455,7 +468,7 @@ function listFilesRecursive(rootPath: string, acc: string[] = []): string[] {
   }
 
   return acc;
-}
+};
 
 const inlinedTeamDataSource = `const teamData = [
     {
@@ -541,21 +554,21 @@ function createStore<T extends object>(
     }
 }`;
 
-function inlineFramerSyncSupportModules(content: string): string {
+const inlineFramerSyncSupportModules = (content: string): string => {
   let next = content;
 
   next = next.replaceAll(
-    /import\s+\{\s*createStore\s*\}\s+from\s+["']\.\.\/_support\/framer-store["'];?\n?/g,
+    /import\s+\{\s*createStore\s*\}\s+from\s+["']\.\.\/_support\/framer-store["'];?\n?/gu,
     `${inlinedCreateStoreSource}\n\n`
   );
 
   next = next.replaceAll(
-    /import\s+\{\s*teamData\s*\}\s+from\s+["']\.\.\/_support\/stubs\/TeamData["'];?\n?/g,
+    /import\s+\{\s*teamData\s*\}\s+from\s+["']\.\.\/_support\/stubs\/TeamData["'];?\n?/gu,
     `${inlinedTeamDataSource}\n\n`
   );
 
   return next;
-}
+};
 
 /**
  * Replaces `import Name from "../_support/stubs/X"` with the latest
@@ -564,7 +577,7 @@ function inlineFramerSyncSupportModules(content: string): string {
  * Card, DrawerContent, and Preview are Framer-published components — in Framer
  * they must be imported from their CDN URL, not from a local stub file.
  */
-function replaceStubImportsWithFramerUrls(content: string): string {
+const replaceStubImportsWithFramerUrls = (content: string): string => {
   const STUB_TO_COMPONENT_KEY: Record<string, string> = {
     Card: "Card",
     DrawerContent: "DrawerContent",
@@ -582,14 +595,15 @@ function replaceStubImportsWithFramerUrls(content: string): string {
 
     next = next.replace(
       new RegExp(
-        `import\\s+([A-Za-z0-9_$]+)\\s+from\\s+["']\\.\\.\\/_support\\/stubs\\/${stubName}["'];?\\n?`
+        `import\\s+([A-Za-z0-9_$]+)\\s+from\\s+["']\\.\\.\\/_support\\/stubs\\/${stubName}["'];?\\n?`,
+        "u"
       ),
       `import $1 from "${url}"\n`
     );
   }
 
   return next;
-}
+};
 
 /**
  * Inlines the `_support/shapes.tsx` module directly into files that import from it.
@@ -599,7 +613,7 @@ function replaceStubImportsWithFramerUrls(content: string): string {
  * import that Framer can't resolve, we embed the module source inline — the same
  * technique used for framer-store and TeamData.
  */
-function inlineSupportShapesModule(content: string): string {
+const inlineSupportShapesModule = (content: string): string => {
   if (
     !content.includes('"../_support/shapes"') &&
     !content.includes("'../_support/shapes'")
@@ -615,19 +629,19 @@ function inlineSupportShapesModule(content: string): string {
   let shapesSource = fs.readFileSync(shapesPath, "utf-8");
   // Drop the React import — the host file already imports React
   shapesSource = shapesSource.replace(
-    /^import \* as React from ["']react["'];?\r?\n/m,
+    /^import \* as React from ["']react["'];?\r?\n/mu,
     ""
   );
   // Drop the generated-file comment block so it doesn't appear twice
-  shapesSource = shapesSource.replace(/^\/\*\*[\s\S]*?\*\/\n/m, "");
+  shapesSource = shapesSource.replace(/^\/\*\*[\s\S]*?\*\/\n/mu, "");
   // Drop `export default shapePaths` — the host file has its own default export
-  shapesSource = shapesSource.replace(/^export default \w+;?\r?\n?/m, "");
+  shapesSource = shapesSource.replace(/^export default \w+;?\r?\n?/mu, "");
 
   return content.replace(
-    /import\s*\{[\s\S]*?\}\s*from\s*["']\.\.\/_support\/shapes["'];?\s*/m,
+    /import\s*\{[\s\S]*?\}\s*from\s*["']\.\.\/_support\/shapes["'];?\s*/mu,
     `${shapesSource}\n\n`
   );
-}
+};
 
 const inlinedCaseStudyCardCodeSource = `function CaseStudyCardCode({
     children,
@@ -665,7 +679,7 @@ const inlinedRemotePlaceholderSource = `function FramerRemotePlaceholder() {
     return null
 }`;
 
-function buildInlinedNavBarLogoSource(): string {
+const buildInlinedNavBarLogoSource = (): string => {
   const logoSourcePath = path.join(
     repoRoot,
     "src",
@@ -676,9 +690,9 @@ function buildInlinedNavBarLogoSource(): string {
   );
   const logoSource = fs.readFileSync(logoSourcePath, "utf-8");
   const svgMatch = logoSource.match(
-    /export const SVG_MARKUP = String\.raw`([\s\S]*?)`/
+    /export const SVG_MARKUP = String\.raw`(?<markup>[\s\S]*?)`/u
   );
-  const svgMarkup = svgMatch?.[1] ?? "";
+  const svgMarkup = svgMatch?.groups?.markup ?? "";
 
   return `const SVG_MARKUP = String.raw\`${svgMarkup}\`
 
@@ -704,79 +718,85 @@ function Logo({
         />
     )
 }`;
-}
+};
 
-function inlineNavBarSupportModules(content: string, syncPath: string): string {
+const inlineNavBarSupportModules = (
+  content: string,
+  syncPath: string
+): string => {
   if (syncPath !== "Navigation/NavBar.tsx") {
     return content;
   }
 
   let next = content;
   next = next.replace(
-    /import\s+Logo,\s*\{\s*SVG_MARKUP\s*\}\s+from\s+["']\.\.\/_support\/stubs\/Logo["'];?\n?/,
+    /import\s+Logo,\s*\{\s*SVG_MARKUP\s*\}\s+from\s+["']\.\.\/_support\/stubs\/Logo["'];?\n?/u,
     `${buildInlinedNavBarLogoSource()}\n\n`
   );
   next = next.replace(
-    /import\s+CaseStudyCardCode\s+from\s+["']\.\.\/_support\/stubs\/CaseStudyCardCode["'];?\n?/,
+    /import\s+CaseStudyCardCode\s+from\s+["']\.\.\/_support\/stubs\/CaseStudyCardCode["'];?\n?/u,
     `${inlinedCaseStudyCardCodeSource}\n\n`
   );
 
   return next;
-}
+};
 
-function tuneScrollJourneyForSync(content: string, syncPath: string): string {
+const tuneScrollJourneyForSync = (
+  content: string,
+  syncPath: string
+): string => {
   if (syncPath !== "Scrolling/ScrollJourney.tsx") {
     return content;
   }
 
   let next = content;
-  next = next.replace(/^"use client"\s*\n+/m, "");
+  next = next.replace(/^"use client"\s*\n+/mu, "");
   next = next.replace(
-    /import\s+\{\s*CSSPlugin\s*\}\s+from\s+["']gsap\/CSSPlugin["'];?\n?/,
+    /import\s+\{\s*CSSPlugin\s*\}\s+from\s+["']gsap\/CSSPlugin["'];?\n?/u,
     ""
   );
   next = next.replace(
-    /gsap\.registerPlugin\(CSSPlugin,\s*ScrollTrigger\)/,
+    /gsap\.registerPlugin\(CSSPlugin,\s*ScrollTrigger\)/u,
     "gsap.registerPlugin(ScrollTrigger)"
   );
 
   return next;
-}
+};
 
-function rewriteCriticalRelativeImports(content: string): string {
+const rewriteCriticalRelativeImports = (content: string): string => {
   const buttonPillUrl = latestKnownFramerUrl("ButtonPill");
   const hugeIconUrl = latestKnownFramerUrl("HugeIconFont");
 
   let next = content;
   if (buttonPillUrl) {
     next = next.replaceAll(
-      /from\s+["'](?:\.\.\/|\.\/)*Utility\/ButtonPill(?:\.tsx|\.ts|\.jsx|\.js)?["']/g,
+      /from\s+["'](?:\.\.\/|\.\/)*Utility\/ButtonPill(?:\.tsx|\.ts|\.jsx|\.js)?["']/gu,
       `from "${buttonPillUrl}"`
     );
     next = next.replaceAll(
-      /from\s+["'](?:\.\.\/|\.\/)*ButtonPill(?:\.tsx|\.ts|\.jsx|\.js)?["']/g,
+      /from\s+["'](?:\.\.\/|\.\/)*ButtonPill(?:\.tsx|\.ts|\.jsx|\.js)?["']/gu,
       `from "${buttonPillUrl}"`
     );
   }
 
   if (hugeIconUrl) {
     next = next.replaceAll(
-      /from\s+["'](?:\.\.\/|\.\/)*Utility\/HugeIconFont(?:\.tsx|\.ts|\.jsx|\.js)?["']/g,
+      /from\s+["'](?:\.\.\/|\.\/)*Utility\/HugeIconFont(?:\.tsx|\.ts|\.jsx|\.js)?["']/gu,
       `from "${hugeIconUrl}"`
     );
     next = next.replaceAll(
-      /from\s+["'](?:\.\.\/|\.\/)*HugeIconFont(?:\.tsx|\.ts|\.jsx|\.js)?["']/g,
+      /from\s+["'](?:\.\.\/|\.\/)*HugeIconFont(?:\.tsx|\.ts|\.jsx|\.js)?["']/gu,
       `from "${hugeIconUrl}"`
     );
   }
 
   return next;
-}
+};
 
-function wrapProblematicSyncComponents(
+const wrapProblematicSyncComponents = (
   content: string,
   syncPath: string
-): string {
+): string => {
   const wrapperConfig: Record<
     string,
     { componentKey: string; exportName: string }
@@ -786,13 +806,13 @@ function wrapProblematicSyncComponents(
       componentKey: "iPadDevice",
       exportName: "RemoteiPadDevice",
     },
-    "Utility/iPadDevice.tsx": {
-      componentKey: "iPadDevice",
-      exportName: "RemoteiPadDevice",
-    },
     "Utility/HugeIconFont.tsx": {
       componentKey: "HugeIconFont",
       exportName: "RemoteHugeIconFont",
+    },
+    "Utility/iPadDevice.tsx": {
+      componentKey: "iPadDevice",
+      exportName: "RemoteiPadDevice",
     },
   };
 
@@ -814,39 +834,42 @@ import ${config.exportName} from "${remoteUrl}"
 
 export default ${config.exportName}
 `;
-}
+};
 
-function rewriteSoftwareThatFits3DTrayImports(
+const rewriteSoftwareThatFits3DTrayImports = (
   content: string,
   syncPath: string
-): string {
+): string => {
   if (syncPath !== "3D/SoftwareThatFits3DTray.tsx") {
     return content;
   }
 
   return content.replaceAll(
-    /from\s+["']@react-three\/fiber["']/g,
+    /from\s+["']@react-three\/fiber["']/gu,
     `from "https://esm.sh/@react-three/fiber@8.18.0?external=react,react-dom,three"`
   );
-}
+};
 
-function resolveRelativeReExport(content: string, filePath: string): string {
+const resolveRelativeReExport = (content: string, filePath: string): string => {
   const match = content.match(
-    /^\s*export\s+\{\s*default\s*\}\s+from\s+["'](\.\.?\/[^"']+)["']\s*;?\s*[\r\n]+\s*export\s+\*\s+from\s+["']\1["']\s*;?\s*$/m
+    /^\s*export\s+\{\s*default\s*\}\s+from\s+["'](?<path>\.\.?\/[^"']+)["']\s*;?\s*[\r\n]+\s*export\s+\*\s+from\s+["']\k<path>["']\s*;?\s*$/mu
   );
-  if (!match?.[1]) {
+  if (!match?.groups?.path) {
     return content;
   }
 
-  const targetPath = path.resolve(path.dirname(filePath), `${match[1]}.tsx`);
+  const targetPath = path.resolve(
+    path.dirname(filePath),
+    `${match.groups.path}.tsx`
+  );
   if (!fs.existsSync(targetPath)) {
     return content;
   }
 
   return fs.readFileSync(targetPath, "utf-8");
-}
+};
 
-function readDirectSyncFiles() {
+const readDirectSyncFiles = () => {
   const configPath = path.join(framerSyncRoot, "framer-code-sync.config.jsonc");
   const configSource = fs.readFileSync(configPath, "utf-8");
   const config = JSON.parse(stripJsonComments(configSource)) as {
@@ -855,10 +878,6 @@ function readDirectSyncFiles() {
   };
   const replacements = config.importReplacements ?? [];
   const uploadPathOverrides = config.uploadPathOverrides ?? {};
-  const normalizePathKey = (value: string) =>
-    String(value ?? "")
-      .replaceAll("\\", "/")
-      .replace(/^\/+/, "");
 
   return listFilesRecursive(framerSyncRoot)
     .filter((filePath) => filePath.endsWith(".tsx"))
@@ -887,8 +906,8 @@ function readDirectSyncFiles() {
       content = replaceStubImportsWithFramerUrls(content);
       content = inlineSupportShapesModule(content);
       content = content.replace(
-        /import\s+([A-Za-z0-9_]+)\s+from\s+["']\.\.\/_support\/stubs\/FramerRemotePlaceholder["'];?\n?/,
-        `${inlinedRemotePlaceholderSource}\n\nconst $1 = FramerRemotePlaceholder\n\n`
+        /import\s+(?<localName>[A-Za-z0-9_]+)\s+from\s+["']\.\.\/_support\/stubs\/FramerRemotePlaceholder["'];?\n?/u,
+        `${inlinedRemotePlaceholderSource}\n\nconst $<localName> = FramerRemotePlaceholder\n\n`
       );
       content = inlineNavBarSupportModules(content, syncPath);
       content = tuneScrollJourneyForSync(content, syncPath);
@@ -910,12 +929,12 @@ function readDirectSyncFiles() {
       };
     })
     .filter(Boolean);
-}
+};
 
-function mergeComponentUrls(
+const mergeComponentUrls = (
   existingUrls: Record<string, string[]>,
   incomingMappings: Record<string, string[]>
-): Record<string, string[]> {
+): Record<string, string[]> => {
   const next = { ...existingUrls };
 
   for (const [componentKey, urls] of Object.entries(incomingMappings)) {
@@ -927,52 +946,43 @@ function mergeComponentUrls(
   }
 
   return normalizeComponentUrlsMap(next);
-}
+};
 
-function runRepoScript(scriptName: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      "node",
-      [path.resolve(repoRoot, "scripts", scriptName)],
-      { cwd: repoRoot },
-      (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      }
-    );
+const runRepoScript = async (scriptName: string): Promise<void> => {
+  await execFileAsync("node", [path.resolve(repoRoot, "scripts", scriptName)], {
+    cwd: repoRoot,
   });
-}
+};
 
-function runGenerateManifest(): Promise<void> {
-  return runRepoScript("generate-manifest.mjs");
-}
+const runGenerateManifest = (): Promise<void> =>
+  runRepoScript("generate-manifest.mjs");
 
-function requestMethod(req: unknown): string {
+const requestMethod = (req: unknown): string => {
   const candidate = req as {
     method?: unknown;
     headers?: Record<string, unknown>;
   };
+  const { method: candidateMethod } = candidate;
 
-  const method =
-    typeof candidate?.method === "string"
-      ? candidate.method
-      : typeof candidate?.headers?.[":method"] === "string"
-        ? (candidate.headers[":method"] as string)
-        : "";
+  let method: string;
+  if (typeof candidateMethod === "string") {
+    method = candidateMethod;
+  } else if (typeof candidate?.headers?.[":method"] === "string") {
+    method = candidate.headers[":method"] as string;
+  } else {
+    method = "";
+  }
 
   return method.toUpperCase();
-}
+};
 
-async function runGenerateSyncArtifacts() {
+const runGenerateSyncArtifacts = async () => {
   await runRepoScript("generate-manifest.mjs");
   await runRepoScript("generate-framer-registry.mjs");
   await runRepoScript("generate-framer-sync.mjs");
-}
+};
 
-function replaceFramerProjectComponents(
+const replaceFramerProjectComponents = (
   incoming: Record<
     string,
     {
@@ -990,7 +1000,7 @@ function replaceFramerProjectComponents(
       syncPath?: string;
     }
   >
-) {
+) => {
   const manifestCanvasMap = readManifestCanvasMap();
   const next = Object.fromEntries(
     Object.entries(incoming).map(([key, component]) => {
@@ -1014,14 +1024,14 @@ function replaceFramerProjectComponents(
 
   writeFramerProjectComponents(next);
   return next;
-}
+};
 
 /**
  * Serves the repo-root manifest at /component-manifest.json in dev.
  * Avoids proxying Cosmos (port can shift if 5001 is taken) and works with only
  * `npm run generate:manifest` — Cosmos does not need to be running.
  */
-function serveRepoManifest(): Plugin {
+const serveRepoManifest = (): Plugin => {
   const manifestPath = path.resolve(
     __dirname,
     "..",
@@ -1036,18 +1046,19 @@ function serveRepoManifest(): Plugin {
           next();
           return;
         }
-        fs.readFile(manifestPath, (err, data) => {
-          if (err) {
+        void (async () => {
+          try {
+            const data = await fs.promises.readFile(manifestPath);
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(data);
+          } catch {
             res.statusCode = 404;
             res.setHeader("Content-Type", "text/plain; charset=utf-8");
             res.end(
               "Missing ../public/component-manifest.json — from repo root run: npm run generate:manifest"
             );
-            return;
           }
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.end(data);
-        });
+        })();
       });
 
       server.middlewares.use(
@@ -1130,8 +1141,8 @@ function serveRepoManifest(): Plugin {
               res.end(
                 JSON.stringify({
                   ok: true,
-                  updatedCount,
                   receivedCount: entries.length,
+                  updatedCount,
                 })
               );
             } catch (error) {
@@ -1202,8 +1213,8 @@ function serveRepoManifest(): Plugin {
                 );
                 res.end(
                   JSON.stringify({
-                    updatedKeys: Object.keys(mappings),
                     mappings: nextUrls,
+                    updatedKeys: Object.keys(mappings),
                   })
                 );
                 return;
@@ -1353,12 +1364,12 @@ function serveRepoManifest(): Plugin {
               res.setHeader("Content-Type", "application/json; charset=utf-8");
               res.end(
                 JSON.stringify({
-                  ok: true,
                   generated: [
                     "public/component-manifest.json",
                     "src/generated/framerComponentRegistry.tsx",
                     "framer-sync/RoleModel",
                   ],
+                  ok: true,
                 })
               );
             } catch (error) {
@@ -1446,8 +1457,8 @@ function serveRepoManifest(): Plugin {
               res.setHeader("Content-Type", "application/json; charset=utf-8");
               res.end(
                 JSON.stringify({
-                  ok: true,
                   componentCount: Object.keys(nextComponents).length,
+                  ok: true,
                 })
               );
             } catch (error) {
@@ -1475,8 +1486,8 @@ function serveRepoManifest(): Plugin {
           res.setHeader("Content-Type", "application/json; charset=utf-8");
           res.end(
             JSON.stringify({
-              root: "RoleModel",
               files,
+              root: "RoleModel",
             })
           );
         } catch (error) {
@@ -1493,7 +1504,7 @@ function serveRepoManifest(): Plugin {
     enforce: "pre",
     name: "serve-repo-component-manifest",
   };
-}
+};
 
 // https://vitejs.dev/config/
 export default defineConfig({

@@ -67,7 +67,7 @@ export interface CmsImportRow {
 
 const configuredManifestUrl = import.meta.env.VITE_MANIFEST_URL;
 
-export function getDefaultManifestUrl(): string {
+export const getDefaultManifestUrl = (): string => {
   if (configuredManifestUrl) {
     return configuredManifestUrl;
   }
@@ -80,9 +80,9 @@ export function getDefaultManifestUrl(): string {
   }
 
   return new URL("/component-manifest.json", window.location.origin).toString();
-}
+};
 
-export function normalizeManifestUrl(value: string): string {
+export const normalizeManifestUrl = (value: string): string => {
   const trimmed = value.trim();
   if (!trimmed) {
     return "";
@@ -93,9 +93,9 @@ export function normalizeManifestUrl(value: string): string {
   } catch {
     return trimmed;
   }
-}
+};
 
-export async function fetchManifest(manifestUrl: string): Promise<Manifest> {
+export const fetchManifest = async (manifestUrl: string): Promise<Manifest> => {
   const url = new URL(manifestUrl, window.location.origin);
   url.searchParams.set("t", Date.now().toString());
 
@@ -105,31 +105,28 @@ export async function fetchManifest(manifestUrl: string): Promise<Manifest> {
   }
 
   return response.json() as Promise<Manifest>;
-}
+};
 
-function slugify(value: string): string {
-  return value
+const slugify = (value: string): string =>
+  value
     .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, "-")
-    .replaceAll(/^-+|-+$/g, "");
-}
+    .replaceAll(/[^a-z0-9]+/gu, "-")
+    .replaceAll(/^-+|-+$/gu, "");
 
-function formatStatus(status: ManifestComponent["status"]): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
+const formatStatus = (status: ManifestComponent["status"]): string =>
+  status.charAt(0).toUpperCase() + status.slice(1);
 
-function latestFramerUrl(component: ManifestComponent): string {
-  return component.framerUrl ?? "";
-}
+const latestFramerUrl = (component: ManifestComponent): string =>
+  component.framerUrl ?? "";
 
-function normalizeCategory(value: string | undefined): string {
+const normalizeCategory = (value: string | undefined): string => {
   const trimmed = String(value ?? "").trim();
   return trimmed.length > 0 ? trimmed : "Uncategorized";
-}
+};
 
-function buildCategorySlotMap(
+const buildCategorySlotMap = (
   components: ManifestComponent[]
-): Map<string, number> {
+): Map<string, number> => {
   const grouped = new Map<string, ManifestComponent[]>();
   for (const component of components) {
     const category = normalizeCategory(component.category);
@@ -146,24 +143,23 @@ function buildCategorySlotMap(
     const sorted = [...list].toSorted((left, right) =>
       left.displayName.localeCompare(right.displayName)
     );
-    sorted.forEach((component, index) => {
+    for (const [index, component] of sorted.entries()) {
       slotByKey.set(component.key, (index % 30) + 1);
-    });
+    }
   }
 
   return slotByKey;
-}
+};
 
-function toDisplayPropDocs(propDocs: PropDoc[] | undefined) {
-  return (propDocs ?? []).map(({ name, type, description, required }) => ({
+const toDisplayPropDocs = (propDocs: PropDoc[] | undefined) =>
+  (propDocs ?? []).map(({ name, type, description, required }) => ({
     description,
     name,
     required,
     type,
   }));
-}
 
-export function buildCmsImportRows(manifest: Manifest): CmsImportRow[] {
+export const buildCmsImportRows = (manifest: Manifest): CmsImportRow[] => {
   const components = Object.values(manifest.components);
   const slotByKey = buildCategorySlotMap(components);
 
@@ -188,21 +184,20 @@ export function buildCmsImportRows(manifest: Manifest): CmsImportRow[] {
       Title: component.displayName,
       "TypeScript Prop Count": component.typescriptPropCount ?? 0,
     }));
-}
+};
 
-export function buildCmsImportJson(manifest: Manifest): string {
-  return `${JSON.stringify(buildCmsImportRows(manifest), null, 2)}\n`;
-}
+export const buildCmsImportJson = (manifest: Manifest): string =>
+  `${JSON.stringify(buildCmsImportRows(manifest), null, 2)}\n`;
 
-function escapeCsvValue(value: string | number | boolean): string {
+const escapeCsvValue = (value: string | number | boolean): string => {
   const stringValue = String(value ?? "");
-  if (!/[",\n]/.test(stringValue)) {
+  if (!/[",\n]/u.test(stringValue)) {
     return stringValue;
   }
   return `"${stringValue.replaceAll('"', '""')}"`;
-}
+};
 
-export function buildCmsImportCsv(manifest: Manifest): string {
+export const buildCmsImportCsv = (manifest: Manifest): string => {
   const rows = buildCmsImportRows(manifest);
   const headers = [
     "Slug",
@@ -230,4 +225,4 @@ export function buildCmsImportCsv(manifest: Manifest): string {
   ];
 
   return `${lines.join("\n")}\n`;
-}
+};

@@ -6,48 +6,47 @@
  * Framer's plugin API does not expose nested imports; fetching insertURL bodies is how we inspect them.
  */
 
-export function findFramerLocalSpecifiers(source: string): string[] {
+export const findFramerLocalSpecifiers = (source: string): string[] => {
   const out = new Set<string>();
-  for (const m of source.matchAll(/#framer\/local\/[a-zA-Z0-9/._-]+/g)) {
+  for (const m of source.matchAll(/#framer\/local\/[a-zA-Z0-9/._-]+/gu)) {
     if (m[0]) {
       out.add(m[0]);
     }
   }
   return [...out].toSorted();
-}
+};
 
 /**
  * Framer embeds `!missing/../codeFile/RoleModel/...` when a relative import could not be resolved
  * at publish time (moved folders, renamed files). These break at runtime until the package is republished
  * or instances use a fixed framer.com/m/… URL.
  */
-export function findMissingBundledSpecifiers(source: string): string[] {
+export const findMissingBundledSpecifiers = (source: string): string[] => {
   const out = new Set<string>();
-  for (const m of source.matchAll(/!missing\/[^"']+/g)) {
+  for (const m of source.matchAll(/!missing\/[^"']+/gu)) {
     if (m[0]) {
       out.add(m[0]);
     }
   }
   return [...out].toSorted();
-}
+};
 
-export function discoverNestedModuleUrls(source: string): string[] {
+export const discoverNestedModuleUrls = (source: string): string[] => {
   const out = new Set<string>();
   for (const m of source.matchAll(
-    /https:\/\/(?:framer\.com\/m\/[^"'`\s)]+|framerusercontent\.com\/[^"'`\s)]+)/g
+    /https:\/\/(?:framer\.com\/m\/[^"'`\s)]+|framerusercontent\.com\/[^"'`\s)]+)/gu
   )) {
     if (m[0]) {
       out.add(m[0]);
     }
   }
   return [...out];
-}
+};
 
-function escapeRegex(value: string): string {
-  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+const escapeRegex = (value: string): string =>
+  value.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
-function codeFileReferenceKeys(names: string[]): string[] {
+const codeFileReferenceKeys = (names: string[]): string[] => {
   const keys = new Set<string>();
   for (const name of names) {
     const trimmed = name.trim();
@@ -55,27 +54,27 @@ function codeFileReferenceKeys(names: string[]): string[] {
       continue;
     }
     keys.add(trimmed);
-    keys.add(trimmed.replace(/\.[cm]?[jt]sx?$/i, ""));
+    keys.add(trimmed.replace(/\.[cm]?[jt]sx?$/iu, ""));
   }
   return [...keys].filter(Boolean).toSorted();
-}
+};
 
-export function findCodeFileReferences(
+export const findCodeFileReferences = (
   source: string,
   codeFileNames: string[]
-): string[] {
+): string[] => {
   const references = new Set<string>();
   for (const key of codeFileReferenceKeys(codeFileNames)) {
     const pattern = new RegExp(
       `(?:^|[/"'@])${escapeRegex(key)}(?:\\.[cm]?[jt]sx?|\\.js)?(?:$|[/"'?#])`,
-      "i"
+      "iu"
     );
     if (pattern.test(source)) {
       references.add(key);
     }
   }
   return [...references].toSorted((a, b) => a.localeCompare(b));
-}
+};
 
 export interface FetchedModuleScan {
   url: string;
@@ -105,10 +104,10 @@ export interface CanvasInstanceForScan {
  * BFS fetch from seed URLs (typically canvas insertURLs). Follows re-export chains
  * on framer.com/m/ → framerusercontent.com until no new URLs or limits hit.
  */
-export async function scanModuleUrlsForFramerLocal(
+export const scanModuleUrlsForFramerLocal = async (
   seedUrls: string[],
   options?: { codeFileNames?: string[]; maxTotalFetches?: number }
-): Promise<ModuleScanResult> {
+): Promise<ModuleScanResult> => {
   const maxTotal = options?.maxTotalFetches ?? 600;
   const seen = new Set<string>();
   const queue: string[] = [];
@@ -146,7 +145,12 @@ export async function scanModuleUrlsForFramerLocal(
     seen.add(url);
 
     try {
+      // BFS: each fetch discovers the next URLs to enqueue, so iterations are not
+      // independent and cannot be parallelized with Promise.all without changing
+      // traversal order/limits.
+      // oxlint-disable-next-line eslint/no-await-in-loop -- see comment above
       const res = await fetch(url, { method: "GET" });
+      // oxlint-disable-next-line eslint/no-await-in-loop -- see comment above
       const text = await res.text();
       const locals = findFramerLocalSpecifiers(text);
       const missing = findMissingBundledSpecifiers(text);
@@ -191,7 +195,7 @@ export async function scanModuleUrlsForFramerLocal(
     scans: results,
     truncated: queue.length > 0 && results.length >= maxTotal,
   };
-}
+};
 
 export interface CodeFileBundleHit {
   path: string;
@@ -199,9 +203,9 @@ export interface CodeFileBundleHit {
   missing: string[];
 }
 
-export function scanCodeFileSourcesForFramerLocal(
+export const scanCodeFileSourcesForFramerLocal = (
   files: { path?: string; name: string; content: string }[]
-): CodeFileBundleHit[] {
+): CodeFileBundleHit[] => {
   const hits: CodeFileBundleHit[] = [];
   for (const f of files) {
     const locals = findFramerLocalSpecifiers(f.content);
@@ -216,9 +220,156 @@ export function scanCodeFileSourcesForFramerLocal(
     });
   }
   return hits;
-}
+};
 
-export function formatFramerLocalScanReport(input: {
+const moduleNodeIdFromUrl = (url: string): string => {
+  const match = String(url).match(
+    /\/(?<nodeId>[A-Za-z0-9_]+)\.js(?:[?#].*)?$/u
+  );
+  return match?.groups?.nodeId ?? "";
+};
+
+const nodeUrlFor = (nodeId: string, projectNodeBaseUrl: string): string =>
+  projectNodeBaseUrl
+    ? `${projectNodeBaseUrl}?node=${encodeURIComponent(nodeId)}`
+    : "";
+
+const moduleNodeLines = (url: string, projectNodeBaseUrl: string): string[] => {
+  const moduleNodeId = moduleNodeIdFromUrl(url);
+  if (!moduleNodeId) {
+    return [];
+  }
+  const moduleNodeUrl = nodeUrlFor(moduleNodeId, projectNodeBaseUrl);
+  return moduleNodeUrl
+    ? [`    module node: ${moduleNodeId} -> ${moduleNodeUrl}`]
+    : [`    module node: ${moduleNodeId}`];
+};
+
+const instanceLinesForScan = (
+  scan: FetchedModuleScan,
+  instancesByInsertUrl: Map<string, CanvasInstanceForScan[]>,
+  projectNodeBaseUrl: string
+): string[] => {
+  const linkedInstances = new Map<string, CanvasInstanceForScan>();
+  for (const root of scan.roots) {
+    const matches = instancesByInsertUrl.get(root) ?? [];
+    for (const instance of matches) {
+      linkedInstances.set(instance.id, instance);
+    }
+  }
+  if (linkedInstances.size === 0) {
+    return [];
+  }
+
+  const out = [`    linked canvas instance(s): ${linkedInstances.size}`];
+  for (const instance of linkedInstances.values()) {
+    const name = instance.componentName ? ` (${instance.componentName})` : "";
+    const nodeUrl = nodeUrlFor(instance.id, projectNodeBaseUrl);
+    out.push(
+      nodeUrl
+        ? `    - ${instance.id}${name} -> ${nodeUrl}`
+        : `    - ${instance.id}${name}`
+    );
+  }
+  return out;
+};
+
+const buildMissingSection = (
+  modWithMissing: FetchedModuleScan[],
+  instancesByInsertUrl: Map<string, CanvasInstanceForScan[]>,
+  projectNodeBaseUrl: string
+): string[] => {
+  if (modWithMissing.length === 0) {
+    return [];
+  }
+  const lines: string[] = [
+    `!missing / unresolved codeFile imports (${modWithMissing.length} file(s)) — republish the component from a project with correct RoleModel paths, or replace the instance with a current framer.com/m/… package:`,
+    "",
+  ];
+  for (const s of modWithMissing) {
+    lines.push(`— ${s.url}`, ...moduleNodeLines(s.url, projectNodeBaseUrl));
+    if (!s.ok || s.error) {
+      lines.push(`    fetch: ${s.error ?? `HTTP ${s.status ?? "?"}`}`);
+    }
+    for (const spec of s.missing) {
+      lines.push(`    ${spec}`);
+    }
+    lines.push(
+      ...instanceLinesForScan(s, instancesByInsertUrl, projectNodeBaseUrl),
+      ""
+    );
+  }
+  return lines;
+};
+
+const buildLocalsSection = (
+  modWithLocals: FetchedModuleScan[],
+  instancesByInsertUrl: Map<string, CanvasInstanceForScan[]>,
+  projectNodeBaseUrl: string
+): string[] => {
+  if (modWithLocals.length === 0) {
+    return [];
+  }
+  const lines: string[] = [`#framer/local (${modWithLocals.length} file(s)):`];
+  for (const s of modWithLocals) {
+    lines.push(`— ${s.url}`, ...moduleNodeLines(s.url, projectNodeBaseUrl));
+    for (const loc of s.locals) {
+      lines.push(`    ${loc}`);
+    }
+    lines.push(
+      ...instanceLinesForScan(s, instancesByInsertUrl, projectNodeBaseUrl),
+      ""
+    );
+  }
+  return lines;
+};
+
+const buildCodeHitsSection = (
+  codeHits: CodeFileBundleHit[],
+  codeWithMissing: CodeFileBundleHit[],
+  codeWithLocals: CodeFileBundleHit[]
+): string[] => {
+  if (codeWithMissing.length === 0 && codeWithLocals.length === 0) {
+    return [];
+  }
+  const lines: string[] = ["Code tab sources:"];
+  for (const h of codeHits) {
+    if (h.missing.length === 0 && h.locals.length === 0) {
+      continue;
+    }
+    lines.push(`— ${h.path}`);
+    for (const spec of h.missing) {
+      lines.push(`    !missing: ${spec}`);
+    }
+    for (const loc of h.locals) {
+      lines.push(`    ${loc}`);
+    }
+  }
+  lines.push("");
+  return lines;
+};
+
+const buildFetchIssuesSection = (
+  modWithErrors: FetchedModuleScan[],
+  modWithMissing: FetchedModuleScan[],
+  modWithLocals: FetchedModuleScan[]
+): string[] => {
+  if (
+    modWithErrors.length === 0 ||
+    modWithMissing.length > 0 ||
+    modWithLocals.length > 0
+  ) {
+    return [];
+  }
+  const lines: string[] = ["Fetch issues:", ""];
+  for (const s of modWithErrors.slice(0, 15)) {
+    lines.push(`— ${s.url}: ${s.error ?? `HTTP ${s.status}`}`);
+  }
+  lines.push("");
+  return lines;
+};
+
+export const formatFramerLocalScanReport = (input: {
   moduleScans: FetchedModuleScan[];
   codeHits: CodeFileBundleHit[];
   seedCount: number;
@@ -227,7 +378,7 @@ export function formatFramerLocalScanReport(input: {
   remainingQueue?: number;
   instances?: CanvasInstanceForScan[];
   projectNodeBaseUrl?: string;
-}): string {
+}): string => {
   const lines: string[] = [
     `Remote module import scan`,
     `Seeds: ${input.seedCount} distinct canvas insertURL(s). Fetched ${input.moduleScans.length} module file(s) (including re-export targets).`,
@@ -275,115 +426,22 @@ export function formatFramerLocalScanReport(input: {
   }
 
   const projectNodeBaseUrl = String(input.projectNodeBaseUrl ?? "").trim();
-  const toNodeUrl = (nodeId: string) =>
-    projectNodeBaseUrl
-      ? `${projectNodeBaseUrl}?node=${encodeURIComponent(nodeId)}`
-      : "";
-  const moduleNodeIdFromUrl = (url: string): string => {
-    const match = String(url).match(/\/([A-Za-z0-9_]+)\.js(?:[?#].*)?$/);
-    return match?.[1] ?? "";
-  };
-
-  const appendInstanceLinksForScan = (scan: FetchedModuleScan) => {
-    const linkedInstances = new Map<string, CanvasInstanceForScan>();
-    for (const root of scan.roots) {
-      const matches = instancesByInsertUrl.get(root) ?? [];
-      for (const instance of matches) {
-        linkedInstances.set(instance.id, instance);
-      }
-    }
-    if (linkedInstances.size === 0) {
-      return;
-    }
-
-    lines.push(`    linked canvas instance(s): ${linkedInstances.size}`);
-    for (const instance of linkedInstances.values()) {
-      const name = instance.componentName ? ` (${instance.componentName})` : "";
-      const nodeUrl = toNodeUrl(instance.id);
-      if (nodeUrl) {
-        lines.push(`    - ${instance.id}${name} -> ${nodeUrl}`);
-      } else {
-        lines.push(`    - ${instance.id}${name}`);
-      }
-    }
-  };
-
-  if (modWithMissing.length > 0) {
-    lines.push(
-      `!missing / unresolved codeFile imports (${modWithMissing.length} file(s)) — republish the component from a project with correct RoleModel paths, or replace the instance with a current framer.com/m/… package:`,
-      ""
-    );
-    for (const s of modWithMissing) {
-      lines.push(`— ${s.url}`);
-      const moduleNodeId = moduleNodeIdFromUrl(s.url);
-      const moduleNodeUrl = moduleNodeId ? toNodeUrl(moduleNodeId) : "";
-      if (moduleNodeId && moduleNodeUrl) {
-        lines.push(`    module node: ${moduleNodeId} -> ${moduleNodeUrl}`);
-      } else if (moduleNodeId) {
-        lines.push(`    module node: ${moduleNodeId}`);
-      }
-      if (!s.ok || s.error) {
-        lines.push(`    fetch: ${s.error ?? `HTTP ${s.status ?? "?"}`}`);
-      }
-      for (const spec of s.missing) {
-        lines.push(`    ${spec}`);
-      }
-      appendInstanceLinksForScan(s);
-      lines.push("");
-    }
-  }
-
-  if (modWithLocals.length > 0) {
-    lines.push(`#framer/local (${modWithLocals.length} file(s)):`);
-    for (const s of modWithLocals) {
-      lines.push(`— ${s.url}`);
-      const moduleNodeId = moduleNodeIdFromUrl(s.url);
-      const moduleNodeUrl = moduleNodeId ? toNodeUrl(moduleNodeId) : "";
-      if (moduleNodeId && moduleNodeUrl) {
-        lines.push(`    module node: ${moduleNodeId} -> ${moduleNodeUrl}`);
-      } else if (moduleNodeId) {
-        lines.push(`    module node: ${moduleNodeId}`);
-      }
-      for (const loc of s.locals) {
-        lines.push(`    ${loc}`);
-      }
-      appendInstanceLinksForScan(s);
-      lines.push("");
-    }
-  }
-
-  if (codeWithMissing.length > 0 || codeWithLocals.length > 0) {
-    lines.push("Code tab sources:");
-    for (const h of input.codeHits) {
-      if (h.missing.length === 0 && h.locals.length === 0) {
-        continue;
-      }
-      lines.push(`— ${h.path}`);
-      for (const spec of h.missing) {
-        lines.push(`    !missing: ${spec}`);
-      }
-      for (const loc of h.locals) {
-        lines.push(`    ${loc}`);
-      }
-    }
-    lines.push("");
-  }
-
-  if (
-    modWithErrors.length > 0 &&
-    modWithMissing.length === 0 &&
-    modWithLocals.length === 0
-  ) {
-    lines.push("Fetch issues:", "");
-    for (const s of modWithErrors.slice(0, 15)) {
-      lines.push(`— ${s.url}: ${s.error ?? `HTTP ${s.status}`}`);
-    }
-    lines.push("");
-  }
 
   lines.push(
+    ...buildMissingSection(
+      modWithMissing,
+      instancesByInsertUrl,
+      projectNodeBaseUrl
+    ),
+    ...buildLocalsSection(
+      modWithLocals,
+      instancesByInsertUrl,
+      projectNodeBaseUrl
+    ),
+    ...buildCodeHitsSection(input.codeHits, codeWithMissing, codeWithLocals),
+    ...buildFetchIssuesSection(modWithErrors, modWithMissing, modWithLocals),
     "Fixes: (1) Sync current generated RoleModel paths from this repo, then republish affected Framer packages. (2) Replace canvas instances that still point at legacy relative/codeFile imports with current published modules. (3) If scan hit the fetch limit, increase it and rescan."
   );
 
   return lines.join("\n").trimEnd();
-}
+};

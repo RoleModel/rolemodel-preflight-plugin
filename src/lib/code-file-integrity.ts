@@ -23,39 +23,33 @@ export interface CodeFilePathDriftIssue {
   }[];
 }
 
-function normalizePath(path: string): string {
-  return path.replaceAll("\\", "/").replace(/^\/+/, "");
-}
+const normalizePath = (path: string): string =>
+  path.replaceAll("\\", "/").replace(/^\/+/u, "");
 
-function basename(path: string): string {
-  return normalizePath(path).split("/").at(-1) ?? path;
-}
+const basename = (path: string): string =>
+  normalizePath(path).split("/").at(-1) ?? path;
 
-function stem(path: string): string {
-  return basename(path).replace(/\.[cm]?[jt]sx?$/i, "");
-}
+const stem = (path: string): string =>
+  basename(path).replace(/\.[cm]?[jt]sx?$/iu, "");
 
-function isNestedCodeFile(file: CodeFileForIntegrity): boolean {
+const isNestedCodeFile = (file: CodeFileForIntegrity): boolean => {
   const normalized = normalizePath(file.path);
   return normalized.includes("/") && basename(normalized) === file.name;
-}
+};
 
-function isPathSensitiveSource(source: string): boolean {
-  return (
-    source.includes("addPropertyControls") ||
-    source.includes("@framerSupportedLayout") ||
-    source.includes("framer-plugin") ||
-    /https:\/\/(?:cdn\.jsdelivr\.net|framerusercontent\.com|framer\.com\/m\/)/.test(
-      source
-    )
+const isPathSensitiveSource = (source: string): boolean =>
+  source.includes("addPropertyControls") ||
+  source.includes("@framerSupportedLayout") ||
+  source.includes("@framer/plugin") ||
+  /https:\/\/(?:cdn\.jsdelivr\.net|framerusercontent\.com|framer\.com\/m\/)/u.test(
+    source
   );
-}
 
-export function findCodeFilePathDriftIssues(input: {
+export const findCodeFilePathDriftIssues = (input: {
   files: CodeFileForIntegrity[];
   moduleScans: FetchedModuleScan[];
   instances: CanvasInstanceForScan[];
-}): CodeFilePathDriftIssue[] {
+}): CodeFilePathDriftIssue[] => {
   const rootPaths = new Set(
     input.files.map((file) => normalizePath(file.path))
   );
@@ -118,11 +112,11 @@ export function findCodeFilePathDriftIssues(input: {
   }
 
   return issues;
-}
+};
 
-export function formatCodeFilePathDriftReport(
+export const formatCodeFilePathDriftReport = (
   issues: CodeFilePathDriftIssue[]
-): string {
+): string => {
   const lines = ["Code file path integrity"];
 
   if (issues.length === 0) {
@@ -136,9 +130,11 @@ export function formatCodeFilePathDriftReport(
   );
 
   for (const issue of issues.slice(0, 20)) {
-    lines.push(`  • ${issue.path}`);
-    lines.push(`      expected root copy: ${issue.expectedRootPath}`);
-    lines.push(`      ${issue.reason}`);
+    lines.push(
+      `  • ${issue.path}`,
+      `      expected root copy: ${issue.expectedRootPath}`,
+      `      ${issue.reason}`
+    );
     for (const reference of issue.referencedBy.slice(0, 4)) {
       const instances =
         reference.instanceIds.length > 0
@@ -153,4 +149,4 @@ export function formatCodeFilePathDriftReport(
   }
 
   return lines.join("\n");
-}
+};

@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { build } from "esbuild";
 
-async function loadModule(entryPoint) {
+const loadModule = async (entryPoint) => {
   const result = await build({
     bundle: true,
     entryPoints: [entryPoint],
@@ -16,7 +16,7 @@ async function loadModule(entryPoint) {
   return import(
     `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
   );
-}
+};
 
 test("project performance scan identifies risky code patterns", async () => {
   const { analyzeCodePerformance } = await loadModule(
@@ -76,8 +76,8 @@ test("PageSpeed audit maps mobile metrics and recommendations", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (request) => {
     const requestUrl = String(request);
-    assert.match(requestUrl, /strategy=mobile/);
-    assert.match(requestUrl, /category=performance/);
+    assert.match(requestUrl, /strategy=mobile/u);
+    assert.match(requestUrl, /category=performance/u);
     return Promise.resolve(
       Response.json({
         lighthouseResult: {

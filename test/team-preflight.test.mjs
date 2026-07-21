@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { build } from "esbuild";
 
-async function loadModule() {
+const loadModule = async () => {
   const result = await build({
     bundle: true,
     entryPoints: ["src/lib/team-preflight.ts"],
@@ -16,7 +16,7 @@ async function loadModule() {
   return import(
     `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
   );
-}
+};
 
 const modulePromise = loadModule();
 
@@ -61,6 +61,223 @@ test("runTeamPreflight flags missing internal links and placeholders", async () 
     "Internal page path /missing-page was not found."
   );
   assert.equal(report.linkIssues[1].reason, "Placeholder link.");
+});
+
+test("runTeamPreflight treats links matching a dynamic page path template as valid", async () => {
+  const { runTeamPreflight } = await modulePromise;
+
+  const report = await runTeamPreflight(
+    {
+      contrastPairs: [],
+      dynamicPagePaths: ["/blog/:slug", "/collaborating-with-ai/:slug"],
+      links: [
+        { source: "Article link", value: "/blog/my-first-post" },
+        {
+          source: "Guide link",
+          value: "/collaborating-with-ai/ai-workspace",
+        },
+        { source: "Base collection page", value: "/blog" },
+        { source: "Unrelated missing page", value: "/blog-archive" },
+        // A dynamic segment must fill exactly one path part.
+        { source: "Too many segments", value: "/blog/a/b" },
+      ],
+      pagePaths: ["/", "/blog", "/collaborating-with-ai"],
+      texts: [],
+    },
+    {
+      checkColorContrast: false,
+      checkExternalLinks: false,
+      checkPunctuation: false,
+      checkSpelling: false,
+    }
+  );
+
+  assert.equal(report.linkIssues.length, 2);
+  assert.ok(
+    report.linkIssues.some(
+      (issue) =>
+        issue.reason === "Internal page path /blog-archive was not found."
+    )
+  );
+  assert.ok(
+    report.linkIssues.some(
+      (issue) => issue.reason === "Internal page path /blog/a/b was not found."
+    )
+  );
+});
+
+test("extractWebPageLink reads Framer page-id links", async () => {
+  const { extractWebPageLink } = await modulePromise;
+
+  assert.deepEqual(
+    extractWebPageLink({ type: "webPage", webPageId: "page-1" }),
+    { collectionItemId: undefined, webPageId: "page-1" }
+  );
+  assert.deepEqual(
+    extractWebPageLink({
+      collectionItemId: "item-1",
+      type: "webPage",
+      webPageId: "page-1",
+    }),
+    { collectionItemId: "item-1", webPageId: "page-1" }
+  );
+  assert.equal(extractWebPageLink({ type: "url", url: "/x" }), null);
+  assert.equal(extractWebPageLink("/x"), null);
+});
+
+test("runTeamPreflight flags links to deleted pages and CMS items", async () => {
+  const { runTeamPreflight } = await modulePromise;
+
+  const report = await runTeamPreflight(
+    {
+      collectionItemIds: ["item-live"],
+      contrastPairs: [],
+      links: [
+        {
+          source: "Nav link",
+          value: { type: "webPage", webPageId: "page-live" },
+        },
+        {
+          source: "Footer link",
+          value: { type: "webPage", webPageId: "page-deleted" },
+        },
+        {
+          source: "Blog card",
+          value: {
+            collectionItemId: "item-deleted",
+            type: "webPage",
+            webPageId: "page-live",
+          },
+        },
+      ],
+      pagePaths: ["/"],
+      texts: [],
+      webPageIds: ["page-live"],
+    },
+    {
+      checkColorContrast: false,
+      checkExternalLinks: false,
+      checkPunctuation: false,
+      checkSpelling: false,
+    }
+  );
+
+  assert.equal(report.linkIssues.length, 2);
+  assert.match(report.linkIssues[0].reason, /page no longer exists/u);
+  assert.equal(report.linkIssues[0].severity, "error");
+  assert.match(report.linkIssues[1].reason, /CMS item no longer exists/u);
+});
+
+test("findLinkLikeValues catches link-shaped props regardless of prop name", async () => {
+  const { findLinkLikeValues, runTeamPreflight } = await modulePromise;
+
+  const links = findLinkLikeValues(
+    {
+      // Custom-named props that would never match the key heuristic:
+      count: 3,
+      emptyTarget: { type: "webPage" },
+      externalTarget: { type: "url", url: "/services" },
+      plainText: "not a link",
+      target: { type: "webPage", webPageId: "page-deleted" },
+    },
+    "Card (node-1)",
+    "node-1"
+  );
+
+  assert.equal(links.length, 3);
+
+  const report = await runTeamPreflight(
+    {
+      contrastPairs: [],
+      links,
+      pagePaths: ["/services"],
+      texts: [],
+      webPageIds: ["page-live"],
+    },
+    {
+      checkColorContrast: false,
+      checkExternalLinks: false,
+      checkPunctuation: false,
+      checkSpelling: false,
+    }
+  );
+
+  assert.equal(report.linkIssues.length, 2);
+  assert.ok(
+    report.linkIssues.some((issue) =>
+      /page no longer exists/u.test(issue.reason)
+    )
+  );
+  assert.ok(
+    report.linkIssues.some((issue) => issue.reason === "Empty link value.")
+  );
+});
+
+test("findLinkLikeValues ignores style props whose name merely contains a link-ish substring", async () => {
+  const { findLinkLikeValues } = await modulePromise;
+
+  const links = findLinkLikeValues(
+    {
+      buttonBackgroundColor: "rgb(255, 0, 0)",
+      buttonFontSize: "16",
+      buttonLink: "/missing-page",
+      buttonPadding: "0px",
+      ctaBorderColor: "rgb(0, 0, 0)",
+    },
+    "ShapeCutoutCard (node-1)",
+    "node-1"
+  );
+
+  assert.equal(links.length, 1);
+  assert.equal(links[0].label, "buttonLink");
+  assert.equal(links[0].value, "/missing-page");
+});
+
+test("findLinkLikeValues ignores enum/mode strings on a url-named key with no URL structure", async () => {
+  const { findLinkLikeValues } = await modulePromise;
+
+  const links = findLinkLikeValues(
+    {
+      // A "custom" urlSource paired with an actual URL value should still
+      // be caught.
+      customUrl: "/academy",
+      // Enum control selecting a strategy ("canonical" | "current" |
+      // "custom"), not a literal URL — should not be treated as a link.
+      urlSource: "canonical",
+    },
+    "ShareButton (node-1)",
+    "node-1"
+  );
+
+  assert.equal(links.length, 1);
+  assert.equal(links[0].label, "customUrl");
+  assert.equal(links[0].value, "/academy");
+});
+
+test("page-id validation is skipped when ids are not provided", async () => {
+  const { runTeamPreflight } = await modulePromise;
+
+  const report = await runTeamPreflight(
+    {
+      contrastPairs: [],
+      links: [
+        {
+          source: "Nav link",
+          value: { type: "webPage", webPageId: "page-anything" },
+        },
+      ],
+      pagePaths: ["/"],
+      texts: [],
+    },
+    {
+      checkColorContrast: false,
+      checkExternalLinks: false,
+      checkPunctuation: false,
+      checkSpelling: false,
+    }
+  );
+
+  assert.equal(report.linkIssues.length, 0);
 });
 
 test("punctuation checks catch copy issues without external services", async () => {
@@ -121,7 +338,7 @@ test("formatTeamPreflightReport clearly names skipped optional checks", async ()
     }
   );
 
-  assert.match(text, /External dead-link checks skipped/);
-  assert.match(text, /Spelling checks skipped/);
-  assert.match(text, /Color contrast checks skipped/);
+  assert.match(text, /External dead-link checks skipped/u);
+  assert.match(text, /Spelling checks skipped/u);
+  assert.match(text, /Color contrast checks skipped/u);
 });

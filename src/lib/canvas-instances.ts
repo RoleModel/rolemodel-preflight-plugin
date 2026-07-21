@@ -10,9 +10,9 @@ export interface ComponentInstanceSummary {
   componentIdentifier: string;
 }
 
-export function groupInstancesByInsertUrl(
+export const groupInstancesByInsertUrl = (
   instances: ComponentInstanceSummary[]
-): Map<string, ComponentInstanceSummary[]> {
+): Map<string, ComponentInstanceSummary[]> => {
   const map = new Map<string, ComponentInstanceSummary[]>();
   for (const inst of instances) {
     const key = inst.insertURL ?? "(null insertURL)";
@@ -21,12 +21,12 @@ export function groupInstancesByInsertUrl(
     map.set(key, list);
   }
   return map;
-}
+};
 
-export function formatCanvasInstanceReport(
+export const formatCanvasInstanceReport = (
   instances: ComponentInstanceSummary[],
   options?: { maxIdsPerUrl?: number }
-): string {
+): string => {
   const maxIds = options?.maxIdsPerUrl ?? 8;
   if (instances.length === 0) {
     return "No ComponentInstanceNode instances found on the canvas (or API returned empty).";
@@ -77,4 +77,4 @@ export function formatCanvasInstanceReport(
   }
 
   return lines.join("\n").trimEnd();
-}
+};

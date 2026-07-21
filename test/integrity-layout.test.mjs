@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { build } from "esbuild";
 
-async function loadModule(entryPoint) {
+const loadModule = async (entryPoint) => {
   const result = await build({
     bundle: true,
     entryPoints: [entryPoint],
@@ -16,7 +16,7 @@ async function loadModule(entryPoint) {
   return import(
     `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
   );
-}
+};
 
 test("findCodeFileReferences detects module references to code file basenames", async () => {
   const { findCodeFileReferences } = await loadModule(

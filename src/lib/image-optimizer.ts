@@ -3,8 +3,8 @@ import type {
   CollectionItem,
   Field,
   ImageAsset,
-} from "framer-plugin";
-import { framer } from "framer-plugin";
+} from "@framer/plugin";
+import { framer } from "@framer/plugin";
 
 export interface ImageFieldOption {
   id: string;
@@ -38,16 +38,15 @@ const SUPPORTED_SOURCE_TYPES = new Set([
   WEBP_MIME_TYPE,
 ]);
 
-export function getImageFields(fields: readonly Field[]): ImageFieldOption[] {
-  return fields
+export const getImageFields = (fields: readonly Field[]): ImageFieldOption[] =>
+  fields
     .filter((field) => field.type === "image")
     .map((field) => ({ id: field.id, name: field.name }));
-}
 
-export async function collectImageCandidates(
+export const collectImageCandidates = async (
   collection: Collection,
   selectedFieldId: string
-): Promise<ImageCandidate[]> {
+): Promise<ImageCandidate[]> => {
   const [fields, items] = await Promise.all([
     collection.getFields(),
     collection.getItems(),
@@ -73,13 +72,15 @@ export async function collectImageCandidates(
   }
 
   return candidates;
-}
+};
 
-function canvasToBlob(
+const canvasToBlob = (
   canvas: HTMLCanvasElement,
   quality: number
-): Promise<Blob> {
-  return new Promise((resolve, reject) => {
+): Promise<Blob> =>
+  // canvas.toBlob is a callback-only API with no promise-returning equivalent.
+  // oxlint-disable-next-line promise/avoid-new
+  new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
         if (blob) {
@@ -92,37 +93,36 @@ function canvasToBlob(
       quality
     );
   });
-}
 
-function optimizedDimensions(
+const optimizedDimensions = (
   width: number,
   height: number,
   maxDimension: number
-): { width: number; height: number } {
+): { width: number; height: number } => {
   const longestSide = Math.max(width, height);
   if (longestSide <= maxDimension) {
-    return { width, height };
+    return { height, width };
   }
   const scale = maxDimension / longestSide;
   return {
-    width: Math.max(1, Math.round(width * scale)),
     height: Math.max(1, Math.round(height * scale)),
+    width: Math.max(1, Math.round(width * scale)),
   };
-}
+};
 
-function optimizedFileName(candidate: ImageCandidate): string {
+const optimizedFileName = (candidate: ImageCandidate): string => {
   const baseName = candidate.item.slug || candidate.image.id || "cms-image";
   const fieldName = candidate.fieldName
     .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, "-")
-    .replaceAll(/^-+|-+$/g, "");
+    .replaceAll(/[^a-z0-9]+/gu, "-")
+    .replaceAll(/^-+|-+$/gu, "");
   return `${baseName}-${fieldName || "image"}.webp`;
-}
+};
 
-export async function optimizeCmsImage(
+export const optimizeCmsImage = async (
   candidate: ImageCandidate,
   options: ImageOptimizationOptions
-): Promise<ImageOptimizationResult> {
+): Promise<ImageOptimizationResult> => {
   const source = await candidate.image.getData();
   const beforeBytes = source.bytes.byteLength;
   if (options.skipWebp && source.mimeType === WEBP_MIME_TYPE) {
@@ -159,9 +159,9 @@ export async function optimizeCmsImage(
     await candidate.item.setAttributes({
       fieldData: {
         [candidate.fieldId]: {
+          alt: candidate.image.altText ?? "",
           type: "image",
           value: uploaded.url,
-          alt: candidate.image.altText ?? "",
         },
       },
     });
@@ -174,4 +174,4 @@ export async function optimizeCmsImage(
   } finally {
     bitmap.close();
   }
-}
+};

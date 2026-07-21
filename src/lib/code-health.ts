@@ -43,49 +43,44 @@ export interface CodeHealthReport {
   scannedRoleModelFiles: number;
 }
 
-function normalizeSyncPath(value: string): string {
-  return value.replaceAll("\\", "/").replace(/^\/+/, "");
-}
+const normalizeSyncPath = (value: string): string =>
+  value.replaceAll("\\", "/").replace(/^\/+/u, "");
 
-function normalizeFramerPathSegment(value: string): string {
-  return value
-    .replaceAll(/[^a-zA-Z0-9._-]+/g, "_")
-    .replaceAll(/_+/g, "_")
-    .replaceAll(/^_+|_+$/g, "");
-}
+const normalizeFramerPathSegment = (value: string): string =>
+  value
+    .replaceAll(/[^a-zA-Z0-9._-]+/gu, "_")
+    .replaceAll(/_+/gu, "_")
+    .replaceAll(/^_+|_+$/gu, "");
 
-function toFramerSafePath(path: string): string {
-  return normalizeSyncPath(path)
+const toFramerSafePath = (path: string): string =>
+  normalizeSyncPath(path)
     .split("/")
     .map((segment) => normalizeFramerPathSegment(segment))
     .join("/");
-}
 
-export function toFramerSyncFileName(syncPath: string): string {
-  return toFramerSafePath(`RoleModel/${syncPath}`);
-}
+export const toFramerSyncFileName = (syncPath: string): string =>
+  toFramerSafePath(`RoleModel/${syncPath}`);
 
-export function toFramerPathKey(path: string): string {
-  return toFramerSafePath(path).toLowerCase();
-}
+export const toFramerPathKey = (path: string): string =>
+  toFramerSafePath(path).toLowerCase();
 
-function dirnameRoleModelPath(filePath: string): string {
+const dirnameRoleModelPath = (filePath: string): string => {
   const normalized = normalizeSyncPath(filePath);
   const lastSlash = normalized.lastIndexOf("/");
   if (lastSlash <= 0) {
     return "";
   }
   return normalized.slice(0, lastSlash);
-}
+};
 
-function ensureTsxExtension(path: string): string {
-  if (/\.[cm]?[jt]sx?$/i.test(path)) {
+const ensureTsxExtension = (path: string): string => {
+  if (/\.[cm]?[jt]sx?$/iu.test(path)) {
     return path;
   }
   return `${path}.tsx`;
-}
+};
 
-function resolvePathSegments(baseDir: string, relative: string): string {
+const resolvePathSegments = (baseDir: string, relative: string): string => {
   const baseParts = baseDir.split("/").filter(Boolean);
   const relParts = relative.split("/").filter(Boolean);
   const stack = [...baseParts];
@@ -97,15 +92,15 @@ function resolvePathSegments(baseDir: string, relative: string): string {
     }
   }
   return stack.join("/");
-}
+};
 
 /**
  * Resolve a relative or codeFile/ import to a RoleModel/... path.
  */
-export function resolveSpecifierToRoleModelPath(
+export const resolveSpecifierToRoleModelPath = (
   fromFilePath: string,
   specifier: string
-): string | null {
+): string | null => {
   const trimmed = specifier.trim();
   if (!trimmed) {
     return null;
@@ -128,33 +123,39 @@ export function resolveSpecifierToRoleModelPath(
   const joined = resolvePathSegments(fromDir, trimmed);
   const withExt = ensureTsxExtension(joined);
   return toFramerSafePath(withExt);
-}
+};
 
-export function extractResolvableImportSpecifiers(source: string): string[] {
+export const extractResolvableImportSpecifiers = (source: string): string[] => {
   const out: string[] = [];
-  const fromRe = /\bfrom\s+["']([^"']+)["']/g;
-  const dynImportRe = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
+  const fromRe = /\bfrom\s+["'](?<specifier>[^"']+)["']/gu;
+  const dynImportRe = /\bimport\s*\(\s*["'](?<specifier>[^"']+)["']\s*\)/gu;
   let match: RegExpExecArray | null;
 
   while ((match = fromRe.exec(source)) !== null) {
-    const spec = match[1];
-    if (spec && (spec.startsWith(".") || spec.startsWith("codeFile/"))) {
-      out.push(spec);
+    const { specifier } = match.groups ?? {};
+    if (
+      specifier &&
+      (specifier.startsWith(".") || specifier.startsWith("codeFile/"))
+    ) {
+      out.push(specifier);
     }
   }
   while ((match = dynImportRe.exec(source)) !== null) {
-    const spec = match[1];
-    if (spec && (spec.startsWith(".") || spec.startsWith("codeFile/"))) {
-      out.push(spec);
+    const { specifier } = match.groups ?? {};
+    if (
+      specifier &&
+      (specifier.startsWith(".") || specifier.startsWith("codeFile/"))
+    ) {
+      out.push(specifier);
     }
   }
   return out;
-}
+};
 
 const JSX_LINK_TOKEN_RE =
-  /<\/?(?:a|motion\.a|Link)\b[^>]*>|<Button\b[^>]*\bhref\s*=[^>]*>/g;
+  /<\/?(?:a|motion\.a|Link)\b[^>]*>|<Button\b[^>]*\bhref\s*=[^>]*>/gu;
 
-function lineForIndex(source: string, index: number): number {
+const lineForIndex = (source: string, index: number): number => {
   let line = 1;
   for (let i = 0; i < index; i += 1) {
     if (source.codePointAt(i) === 10) {
@@ -162,42 +163,36 @@ function lineForIndex(source: string, index: number): number {
     }
   }
   return line;
-}
+};
 
-function getTagName(token: string): string {
-  const match = token.match(/^<\/?\s*([a-zA-Z.]+)/);
-  return match?.[1] ?? "unknown";
-}
+const getTagName = (token: string): string => {
+  const match = token.match(/^<\/?\s*(?<tag>[a-zA-Z.]+)/u);
+  return match?.groups?.tag ?? "unknown";
+};
 
-function isClosingToken(token: string): boolean {
-  return token.startsWith("</");
-}
+const isClosingToken = (token: string): boolean => token.startsWith("</");
 
-function isSelfClosingToken(token: string): boolean {
-  return /\/\s*>$/.test(token);
-}
+const isSelfClosingToken = (token: string): boolean => /\/\s*>$/u.test(token);
 
-function isLinkLikeButton(token: string): boolean {
-  return /^<Button\b/.test(token);
-}
+const isLinkLikeButton = (token: string): boolean => /^<Button\b/u.test(token);
 
-function getLineSnippet(source: string, index: number): string {
+const getLineSnippet = (source: string, index: number): string => {
   const lineStart = source.lastIndexOf("\n", index - 1) + 1;
   const lineEnd = source.indexOf("\n", index);
   const end = lineEnd === -1 ? source.length : lineEnd;
   return source.slice(lineStart, end).trim();
-}
+};
 
-export function findNestedLinkIssues(
+export const findNestedLinkIssues = (
   source: string,
   file: string
-): NestedLinkIssue[] {
+): NestedLinkIssue[] => {
   const issues: NestedLinkIssue[] = [];
   const stack: { name: string; line: number }[] = [];
   let match: RegExpExecArray | null;
 
   while ((match = JSX_LINK_TOKEN_RE.exec(source)) !== null) {
-    const token = match[0];
+    const [token] = match;
     const { index } = match;
     const name = getTagName(token);
 
@@ -230,12 +225,12 @@ export function findNestedLinkIssues(
   }
 
   return issues;
-}
+};
 
-export function analyzeCodeHealth(input: {
+export const analyzeCodeHealth = (input: {
   syncFiles: DirectSyncFileLike[];
   framerFiles: FramerCodeFileLike[];
-}): CodeHealthReport {
+}): CodeHealthReport => {
   const repoKeys = new Set(
     input.syncFiles.map((f) =>
       toFramerPathKey(toFramerSyncFileName(f.syncPath))
@@ -292,16 +287,16 @@ export function analyzeCodeHealth(input: {
 
   return {
     brokenRelativeImports,
-    missingInFramer: missingInFramer.sort((a, b) => a.localeCompare(b)),
+    missingInFramer: missingInFramer.toSorted((a, b) => a.localeCompare(b)),
     nestedLinks,
     scannedRoleModelFiles,
   };
-}
+};
 
 /**
  * Human-readable summary for the plugin UI.
  */
-export function formatCodeHealthReport(report: CodeHealthReport): string {
+export const formatCodeHealthReport = (report: CodeHealthReport): string => {
   const lines: string[] = [];
 
   if (report.missingInFramer.length > 0) {
@@ -380,4 +375,4 @@ export function formatCodeHealthReport(report: CodeHealthReport): string {
   );
 
   return lines.filter(Boolean).join("\n");
-}
+};

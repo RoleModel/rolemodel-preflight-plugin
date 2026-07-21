@@ -64,14 +64,14 @@ interface PageSpeedPayload {
 }
 
 const HIDDEN_TEXT_PATTERN =
-  /initial\s*[:=]\s*\{?[\s\S]{0,220}?opacity\s*:\s*0/i;
-const TEXT_ANIMATION_PATTERN = /(?:letter|word|text|title|heading|blur)/i;
+  /initial\s*[:=]\s*\{?[\s\S]{0,220}?opacity\s*:\s*0/iu;
+const TEXT_ANIMATION_PATTERN = /(?:letter|word|text|title|heading|blur)/iu;
 const LOAD_ANIMATION_PATTERN =
-  /(?:blurTrigger\s*=\s*["']load["']|setTimeout\s*\([\s\S]{0,120}setShouldAnimate)/i;
-const LEGACY_RASTER_PATTERN = /\.(?:png|jpe?g)(?:\?|$)/i;
-const FRAMER_IMAGE_HOST_PATTERN = /(?:^|\.)framerusercontent\.com$/i;
+  /(?:blurTrigger\s*=\s*["']load["']|setTimeout\s*\([\s\S]{0,120}setShouldAnimate)/iu;
+const LEGACY_RASTER_PATTERN = /\.(?:png|jpe?g)(?:\?|$)/iu;
+const FRAMER_IMAGE_HOST_PATTERN = /(?:^|\.)framerusercontent\.com$/iu;
 
-function isActionableLegacyRaster(url: string): boolean {
+const isActionableLegacyRaster = (url: string): boolean => {
   if (!LEGACY_RASTER_PATTERN.test(url)) {
     return false;
   }
@@ -85,18 +85,17 @@ function isActionableLegacyRaster(url: string): boolean {
   } catch {
     return false;
   }
-}
+};
 
-function metric(audit: LighthouseAudit | undefined): string | undefined {
-  return audit?.displayValue;
-}
+const metric = (audit: LighthouseAudit | undefined): string | undefined =>
+  audit?.displayValue;
 
-function pageSpeedFinding(
+const pageSpeedFinding = (
   audits: Record<string, LighthouseAudit>,
   id: string,
   severity: PerformanceSeverity,
   recommendation: string
-): PerformanceFinding | null {
+): PerformanceFinding | null => {
   const audit = audits[id];
   if (!audit || audit.score === 1 || audit.score === null) {
     return null;
@@ -108,11 +107,11 @@ function pageSpeedFinding(
     severity,
     title: audit.title ?? id,
   };
-}
+};
 
-export function analyzeCodePerformance(
+export const analyzeCodePerformance = (
   files: readonly CodeFileSource[]
-): PerformanceAuditResult {
+): PerformanceAuditResult => {
   const findings: PerformanceFinding[] = [];
 
   for (const file of files) {
@@ -133,7 +132,9 @@ export function analyzeCodePerformance(
       });
     }
 
-    if (/from\s+["']three["']|three\.module|@react-three/i.test(file.content)) {
+    if (
+      /from\s+["']three["']|three\.module|@react-three/iu.test(file.content)
+    ) {
       findings.push({
         codeFilePath: file.path,
         detail: "This code file loads a Three.js/WebGL dependency.",
@@ -147,11 +148,11 @@ export function analyzeCodePerformance(
   }
 
   return { findings, metrics: {}, source: "project" };
-}
+};
 
-export function analyzeCanvasImages(
+export const analyzeCanvasImages = (
   images: readonly CanvasImageSource[]
-): PerformanceFinding[] {
+): PerformanceFinding[] => {
   const uniqueImages = new Map<string, CanvasImageSource>();
   for (const image of images) {
     if (isActionableLegacyRaster(image.url) && !uniqueImages.has(image.url)) {
@@ -169,12 +170,12 @@ export function analyzeCanvasImages(
     severity: "warning" as const,
     title: "Legacy raster image instance",
   }));
-}
+};
 
-export async function runPageSpeedAudit(
+export const runPageSpeedAudit = async (
   url: string,
   apiKey?: string
-): Promise<PerformanceAuditResult> {
+): Promise<PerformanceAuditResult> => {
   const endpoint = new URL(
     "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
   );
@@ -271,4 +272,4 @@ export async function runPageSpeedAudit(
     },
     source: "pagespeed",
   };
-}
+};
