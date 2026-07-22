@@ -65,6 +65,7 @@ import type {
   TextCandidate,
 } from "./lib/team-preflight";
 import { PerformancePanel } from "./performance-panel";
+import { UrlBuilderPanel } from "./url-builder-panel";
 
 interface DirectSyncFile {
   path: string;
@@ -142,7 +143,8 @@ type ScanSection =
   | "performance"
   | "fonts"
   | "organize"
-  | "rename";
+  | "rename"
+  | "urlBuilder";
 
 interface OrganizeCanvasRow {
   nodeId: string;
@@ -3102,6 +3104,9 @@ export const App = () => {
       case "rename": {
         return <BatchRenamePanel />;
       }
+      case "urlBuilder": {
+        return <UrlBuilderPanel />;
+      }
       case "organize": {
         return (
           <OrganizeSection
@@ -3168,6 +3173,7 @@ export const App = () => {
               ["rename", "Batch rename"],
               ["fonts", "Fonts"],
               ["performance", "Performance"],
+              ["urlBuilder", "URL builder"],
             ] as const
           ).map(([key, label]) => (
             <button
