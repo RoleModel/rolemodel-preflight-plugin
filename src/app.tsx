@@ -78,6 +78,7 @@ import type {
 } from "./lib/team-preflight";
 import { PerformancePanel } from "./performance-panel";
 import { UrlBuilderPanel } from "./url-builder-panel";
+import { UsageFinderPanel } from "./usage-finder-panel";
 
 interface DirectSyncFile {
   path: string;
@@ -157,7 +158,8 @@ type ScanSection =
   | "fonts"
   | "organize"
   | "rename"
-  | "urlBuilder";
+  | "urlBuilder"
+  | "usageFinder";
 
 interface OrganizeCanvasRow {
   nodeId: string;
@@ -3357,6 +3359,9 @@ export const App = () => {
       case "urlBuilder": {
         return <UrlBuilderPanel />;
       }
+      case "usageFinder": {
+        return <UsageFinderPanel />;
+      }
       case "organize": {
         return (
           <OrganizeSection
@@ -3433,6 +3438,7 @@ export const App = () => {
               ["altText", "Alt text"],
               ["performance", "Performance"],
               ["urlBuilder", "URL builder"],
+              ["usageFinder", "Usage finder"],
             ] as const
           ).map(([key, label]) => (
             <button

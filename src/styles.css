@@ -390,6 +390,37 @@ p {
   background: var(--rmp-color-surface-muted);
 }
 
+.usage-finder-item__label--done {
+  color: var(--rmp-color-text-muted);
+  text-decoration: line-through;
+}
+
+.usage-finder-diff {
+  display: grid;
+  gap: var(--op-space-3x-small);
+  margin: var(--op-space-2x-small) 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.usage-finder-diff p {
+  margin: 0;
+  padding: var(--op-space-3x-small) var(--op-space-2x-small);
+  border-radius: 4px;
+}
+
+.usage-finder-diff__before {
+  background: #fee2e2;
+  color: #7a2a25;
+  text-decoration: line-through;
+}
+
+.usage-finder-diff__after {
+  background: #dcfce7;
+  color: #14532d;
+}
+
 .alt-text-list {
   display: grid;
   gap: var(--op-space-x-small);
