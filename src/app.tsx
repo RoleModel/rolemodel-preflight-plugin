@@ -12,6 +12,7 @@ import React, {
   useState,
 } from "react";
 
+import { AltTextPanel } from "./alt-text-panel";
 import { BatchRenamePanel } from "./batch-rename-panel";
 import { FontManagerPanel } from "./font-manager-panel";
 import {
@@ -152,6 +153,7 @@ type ScanSection =
   | "preflight"
   | "spacing"
   | "performance"
+  | "altText"
   | "fonts"
   | "organize"
   | "rename"
@@ -3339,6 +3341,9 @@ export const App = () => {
           />
         );
       }
+      case "altText": {
+        return <AltTextPanel />;
+      }
       case "performance": {
         return (
           <PerformancePanel
@@ -3425,6 +3430,7 @@ export const App = () => {
               ["organize", "Organize"],
               ["rename", "Batch rename"],
               ["fonts", "Fonts"],
+              ["altText", "Alt text"],
               ["performance", "Performance"],
               ["urlBuilder", "URL builder"],
             ] as const
