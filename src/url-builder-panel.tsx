@@ -116,30 +116,34 @@ export const UrlBuilderPanel = () => {
 
       <div className="panel-label">Params</div>
       {rows.map((row) => (
-        <div className="header-actions" key={row.id}>
-          <input
-            className="form-control"
-            onChange={(event) => updateRow(row.id, { key: event.target.value })}
-            placeholder="key"
-            type="text"
-            value={row.key}
-          />
-          <input
+        <div className="panel" key={row.id} style={{ gap: 6, padding: 10 }}>
+          <div className="header-actions">
+            <input
+              className="form-control"
+              onChange={(event) =>
+                updateRow(row.id, { key: event.target.value })
+              }
+              placeholder="key, e.g. hero"
+              type="text"
+              value={row.key}
+            />
+            <button
+              className="btn"
+              onClick={() => removeRow(row.id)}
+              type="button"
+            >
+              Remove
+            </button>
+          </div>
+          <textarea
             className="form-control"
             onChange={(event) =>
               updateRow(row.id, { value: event.target.value })
             }
-            placeholder="value"
-            type="text"
+            placeholder="value — any text, including full sentences and punctuation"
+            rows={row.value.length > 60 ? 3 : 1}
             value={row.value}
           />
-          <button
-            className="btn"
-            onClick={() => removeRow(row.id)}
-            type="button"
-          >
-            Remove
-          </button>
         </div>
       ))}
       <div className="header-actions">
