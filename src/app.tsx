@@ -4,7 +4,13 @@ import {
   isDesignPageNode,
   isWebPageNode,
 } from "@framer/plugin";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { BatchRenamePanel } from "./batch-rename-panel";
 import { FontManagerPanel } from "./font-manager-panel";
@@ -45,10 +51,15 @@ import {
 } from "./lib/scan-framer-local";
 import type { CodeFileBundleHit } from "./lib/scan-framer-local";
 import {
-  spacingTemplates,
+  createSpacingTemplate,
+  defaultSpacingTemplates,
   formatSpacingTemplateSummary,
+  parseSpacingTemplates,
 } from "./lib/spacing-templates";
-import type { SpacingBreakpoint } from "./lib/spacing-templates";
+import type {
+  SpacingBreakpoint,
+  SpacingTemplate,
+} from "./lib/spacing-templates";
 import {
   contrastRatio,
   extractHref,
@@ -225,6 +236,7 @@ const DEFAULT_TEAM_PREFLIGHT_OPTIONS: TeamPreflightOptions = {
 };
 
 const VIOLATIONS_PAGE_SIZE = 100;
+const SPACING_TEMPLATES_PLUGIN_DATA_KEY = "spacing-templates-v1";
 
 const getSpacingLayoutAttributes = (
   row: SpacingBreakpoint
@@ -2598,30 +2610,80 @@ const OrganizeSection = ({
 };
 
 interface SpacingSectionProps {
+  templates: SpacingTemplate[];
   selectedTemplateId: string;
   onSelectTemplate: (id: string) => void;
-  selectedTemplate: ReturnType<typeof spacingTemplates.find>;
+  selectedTemplate: SpacingTemplate | undefined;
   applyingSpacing: string | null;
   onApplySpacing: (row: SpacingBreakpoint, templateName: string) => void;
+  onChangeTemplate: (template: SpacingTemplate) => void;
+  onCreateTemplate: () => void;
+  onDeleteTemplate: () => void;
+  onDuplicateTemplate: () => void;
+  onSaveTemplates: () => void;
+  storageStatus: string;
+  savingTemplates: boolean;
 }
 
 const SpacingSection = ({
+  templates,
   selectedTemplateId,
   onSelectTemplate,
   selectedTemplate,
   applyingSpacing,
   onApplySpacing,
+  onChangeTemplate,
+  onCreateTemplate,
+  onDeleteTemplate,
+  onDuplicateTemplate,
+  onSaveTemplates,
+  storageStatus,
+  savingTemplates,
 }: SpacingSectionProps) => (
   <section className="panel">
     <div className="panel-topline">
-      <span className="panel-label">Spacing templates</span>
-      <span className="panel-muted">
-        Aligned container spacing across mobile, tablet, and desktop.
-      </span>
+      <div>
+        <span className="panel-label">Spacing templates</span>
+        <div className="panel-muted">
+          Create reusable container spacing for mobile, tablet, and desktop.
+          Templates are stored in this Framer project.
+        </div>
+      </div>
+      <div className="header-actions">
+        <button className="btn" onClick={onCreateTemplate} type="button">
+          New
+        </button>
+        <button
+          className="btn"
+          disabled={!selectedTemplate}
+          onClick={onDuplicateTemplate}
+          type="button"
+        >
+          Duplicate
+        </button>
+        <button
+          className="btn"
+          disabled={!selectedTemplate}
+          onClick={onDeleteTemplate}
+          type="button"
+        >
+          Delete
+        </button>
+        <button
+          className="btn btn--primary"
+          disabled={savingTemplates}
+          onClick={onSaveTemplates}
+          type="button"
+        >
+          {savingTemplates ? "Saving…" : "Save templates"}
+        </button>
+      </div>
     </div>
 
+    <p className="panel-muted">{storageStatus}</p>
+
     <div className="template-grid">
-      {spacingTemplates.map((template) => {
+      {templates.map((template) => {
         const isSelected = template.id === selectedTemplateId;
 
         return (
@@ -2678,18 +2740,108 @@ const SpacingSection = ({
       })}
     </div>
 
-    <pre className="report report--compact">
-      {selectedTemplate ? formatSpacingTemplateSummary(selectedTemplate) : ""}
-    </pre>
+    {selectedTemplate ? (
+      <div className="panel">
+        <div className="panel-label">Edit template</div>
+        <div className="check-grid">
+          <label>
+            <span>Name</span>
+            <input
+              className="form-control"
+              onChange={(event) =>
+                onChangeTemplate({
+                  ...selectedTemplate,
+                  name: event.target.value,
+                })
+              }
+              type="text"
+              value={selectedTemplate.name}
+            />
+          </label>
+          <label>
+            <span>Description</span>
+            <input
+              className="form-control"
+              onChange={(event) =>
+                onChangeTemplate({
+                  ...selectedTemplate,
+                  description: event.target.value,
+                })
+              }
+              type="text"
+              value={selectedTemplate.description}
+            />
+          </label>
+        </div>
+
+        <div className="template-table">
+          <div className="template-table__head">
+            <span>Breakpoint</span>
+            <span>Padding Y</span>
+            <span>Padding X</span>
+            <span>Gap</span>
+            <span>Min width</span>
+          </div>
+          {selectedTemplate.breakpoints.map((row) => (
+            <div className="template-table__row" key={row.breakpoint}>
+              <strong>{row.breakpoint}</strong>
+              {(["paddingY", "paddingX", "gap", "maxWidth"] as const).map(
+                (field) => (
+                  <input
+                    aria-label={`${row.breakpoint} ${field}`}
+                    className="form-control form-control--small"
+                    key={field}
+                    min={0}
+                    onChange={(event) => {
+                      const nextValue =
+                        field === "maxWidth" && event.target.value === ""
+                          ? null
+                          : Number(event.target.value);
+                      onChangeTemplate({
+                        ...selectedTemplate,
+                        breakpoints: selectedTemplate.breakpoints.map(
+                          (breakpoint) =>
+                            breakpoint.breakpoint === row.breakpoint
+                              ? { ...breakpoint, [field]: nextValue }
+                              : breakpoint
+                        ),
+                      });
+                    }}
+                    placeholder={field === "maxWidth" ? "Fluid" : undefined}
+                    type="number"
+                    value={row[field] ?? ""}
+                  />
+                )
+              )}
+            </div>
+          ))}
+        </div>
+
+        <pre className="report report--compact">
+          {formatSpacingTemplateSummary(selectedTemplate)}
+        </pre>
+      </div>
+    ) : (
+      <p className="panel-muted">
+        No spacing templates yet. Create one to get started.
+      </p>
+    )}
   </section>
 );
 
 export const App = () => {
   const [section, setSection] = useState<ScanSection>("preflight");
+  const [spacingTemplates, setSpacingTemplates] = useState<SpacingTemplate[]>(
+    []
+  );
   const [selectedTemplateId, setSelectedTemplateId] = useState(
-    spacingTemplates[0]?.id ?? ""
+    defaultSpacingTemplates[0]?.id ?? ""
   );
   const [applyingSpacing, setApplyingSpacing] = useState<string | null>(null);
+  const [savingTemplates, setSavingTemplates] = useState(false);
+  const [spacingStorageStatus, setSpacingStorageStatus] = useState(
+    "Loading saved templates…"
+  );
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -2718,8 +2870,101 @@ export const App = () => {
     () =>
       spacingTemplates.find((template) => template.id === selectedTemplateId) ??
       spacingTemplates[0],
-    [selectedTemplateId]
+    [selectedTemplateId, spacingTemplates]
   );
+
+  useEffect(() => {
+    const loadSpacingTemplates = async () => {
+      try {
+        const storedValue = await framer.getPluginData(
+          SPACING_TEMPLATES_PLUGIN_DATA_KEY
+        );
+        const templates = parseSpacingTemplates(storedValue);
+        setSpacingTemplates(templates);
+        setSelectedTemplateId(templates[0]?.id ?? "");
+        setSpacingStorageStatus(
+          storedValue
+            ? `Loaded ${templates.length} saved template(s).`
+            : "Using the starter template. Save to store it in this project."
+        );
+      } catch (error) {
+        setSpacingTemplates(parseSpacingTemplates(null));
+        setSpacingStorageStatus(
+          `Could not load saved templates: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    };
+    void loadSpacingTemplates();
+  }, []);
+
+  const handleChangeSpacingTemplate = useCallback(
+    (updatedTemplate: SpacingTemplate) => {
+      setSpacingTemplates((templates) =>
+        templates.map((template) =>
+          template.id === updatedTemplate.id ? updatedTemplate : template
+        )
+      );
+      setSpacingStorageStatus("Unsaved changes.");
+    },
+    []
+  );
+
+  const handleCreateSpacingTemplate = useCallback(() => {
+    const template = createSpacingTemplate();
+    setSpacingTemplates((templates) => [...templates, template]);
+    setSelectedTemplateId(template.id);
+    setSpacingStorageStatus("New template created. Save to keep it.");
+  }, []);
+
+  const handleDuplicateSpacingTemplate = useCallback(() => {
+    if (!selectedTemplate) {
+      return;
+    }
+    const template = createSpacingTemplate(selectedTemplate);
+    setSpacingTemplates((templates) => [...templates, template]);
+    setSelectedTemplateId(template.id);
+    setSpacingStorageStatus("Template duplicated. Save to keep it.");
+  }, [selectedTemplate]);
+
+  const handleDeleteSpacingTemplate = useCallback(() => {
+    if (!selectedTemplate) {
+      return;
+    }
+    const remaining = spacingTemplates.filter(
+      (template) => template.id !== selectedTemplate.id
+    );
+    setSpacingTemplates(remaining);
+    setSelectedTemplateId(remaining[0]?.id ?? "");
+    setSpacingStorageStatus("Template deleted. Save to confirm the change.");
+  }, [selectedTemplate, spacingTemplates]);
+
+  const handleSaveSpacingTemplates = useCallback(async () => {
+    const hasInvalidTemplate = spacingTemplates.some(
+      (template) => !template.name.trim()
+    );
+    if (hasInvalidTemplate) {
+      setSpacingStorageStatus("Every template needs a name before saving.");
+      return;
+    }
+
+    setSavingTemplates(true);
+    try {
+      await framer.setPluginData(
+        SPACING_TEMPLATES_PLUGIN_DATA_KEY,
+        JSON.stringify(spacingTemplates)
+      );
+      setSpacingStorageStatus(
+        `Saved ${spacingTemplates.length} template(s) to this project.`
+      );
+      await framer.notify("Spacing templates saved.", { variant: "success" });
+    } catch (error) {
+      setSpacingStorageStatus(
+        `Could not save templates: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      setSavingTemplates(false);
+    }
+  }, [spacingTemplates]);
 
   const handleApplySpacing = useCallback(
     async (row: SpacingBreakpoint, templateName: string) => {
@@ -3141,12 +3386,20 @@ export const App = () => {
         return (
           <SpacingSection
             applyingSpacing={applyingSpacing}
+            onChangeTemplate={handleChangeSpacingTemplate}
+            onCreateTemplate={handleCreateSpacingTemplate}
+            onDeleteTemplate={handleDeleteSpacingTemplate}
+            onDuplicateTemplate={handleDuplicateSpacingTemplate}
             onApplySpacing={(row, templateName) =>
               void handleApplySpacing(row, templateName)
             }
+            onSaveTemplates={() => void handleSaveSpacingTemplates()}
             onSelectTemplate={setSelectedTemplateId}
+            savingTemplates={savingTemplates}
             selectedTemplate={selectedTemplate}
             selectedTemplateId={selectedTemplateId}
+            storageStatus={spacingStorageStatus}
+            templates={spacingTemplates}
           />
         );
       }

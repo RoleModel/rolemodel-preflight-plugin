@@ -13,7 +13,7 @@ export interface SpacingTemplate {
   breakpoints: SpacingBreakpoint[];
 }
 
-export const spacingTemplates: SpacingTemplate[] = [
+export const defaultSpacingTemplates: SpacingTemplate[] = [
   {
     breakpoints: [
       {
@@ -44,6 +44,126 @@ export const spacingTemplates: SpacingTemplate[] = [
     name: "RoleModel",
   },
 ];
+
+export const createSpacingTemplate = (
+  template?: SpacingTemplate
+): SpacingTemplate => {
+  const id = crypto.randomUUID();
+  if (template) {
+    return {
+      ...template,
+      breakpoints: template.breakpoints.map((breakpoint) => ({
+        ...breakpoint,
+      })),
+      id,
+      name: `${template.name} copy`,
+    };
+  }
+
+  return {
+    breakpoints: [
+      {
+        breakpoint: "mobile",
+        gap: 16,
+        maxWidth: null,
+        paddingX: 24,
+        paddingY: 40,
+      },
+      {
+        breakpoint: "tablet",
+        gap: 24,
+        maxWidth: 768,
+        paddingX: 40,
+        paddingY: 56,
+      },
+      {
+        breakpoint: "desktop",
+        gap: 24,
+        maxWidth: 1200,
+        paddingX: 40,
+        paddingY: 80,
+      },
+    ],
+    description: "A custom spacing system for this project.",
+    id,
+    name: "New template",
+  };
+};
+
+const isSpacingBreakpoint = (
+  value: unknown,
+  breakpoint: SpacingBreakpoint["breakpoint"]
+): value is SpacingBreakpoint => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<SpacingBreakpoint>;
+  return (
+    candidate.breakpoint === breakpoint &&
+    typeof candidate.gap === "number" &&
+    Number.isFinite(candidate.gap) &&
+    (candidate.maxWidth === null ||
+      (typeof candidate.maxWidth === "number" &&
+        Number.isFinite(candidate.maxWidth))) &&
+    typeof candidate.paddingX === "number" &&
+    Number.isFinite(candidate.paddingX) &&
+    typeof candidate.paddingY === "number" &&
+    Number.isFinite(candidate.paddingY)
+  );
+};
+
+const isSpacingTemplate = (value: unknown): value is SpacingTemplate => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<SpacingTemplate>;
+  if (
+    typeof candidate.id !== "string" ||
+    !candidate.id ||
+    typeof candidate.name !== "string" ||
+    !candidate.name.trim() ||
+    typeof candidate.description !== "string" ||
+    !Array.isArray(candidate.breakpoints)
+  ) {
+    return false;
+  }
+
+  const breakpoints = new Map(
+    candidate.breakpoints.map((row) => [
+      (row as Partial<SpacingBreakpoint>)?.breakpoint,
+      row,
+    ])
+  );
+  return (["mobile", "tablet", "desktop"] as const).every((breakpoint) =>
+    isSpacingBreakpoint(breakpoints.get(breakpoint), breakpoint)
+  );
+};
+
+export const parseSpacingTemplates = (
+  value: string | null
+): SpacingTemplate[] => {
+  const cloneDefaults = (): SpacingTemplate[] =>
+    defaultSpacingTemplates.map((template) => ({
+      ...template,
+      breakpoints: template.breakpoints.map((breakpoint) => ({
+        ...breakpoint,
+      })),
+    }));
+
+  if (!value) {
+    return cloneDefaults();
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed) || !parsed.every(isSpacingTemplate)) {
+      return cloneDefaults();
+    }
+    return parsed;
+  } catch {
+    return cloneDefaults();
+  }
+};
 
 export const formatSpacingTemplateSummary = (
   template: SpacingTemplate
