@@ -77,6 +77,7 @@ import type {
   TextCandidate,
 } from "./lib/team-preflight";
 import { PerformancePanel } from "./performance-panel";
+import { SchemaPanel } from "./schema-panel";
 import { UrlBuilderPanel } from "./url-builder-panel";
 import { UsageFinderPanel } from "./usage-finder-panel";
 
@@ -158,6 +159,7 @@ type ScanSection =
   | "fonts"
   | "organize"
   | "rename"
+  | "schema"
   | "urlBuilder"
   | "usageFinder";
 
@@ -3356,6 +3358,9 @@ export const App = () => {
       case "rename": {
         return <BatchRenamePanel />;
       }
+      case "schema": {
+        return <SchemaPanel />;
+      }
       case "urlBuilder": {
         return <UrlBuilderPanel />;
       }
@@ -3437,6 +3442,7 @@ export const App = () => {
               ["fonts", "Fonts"],
               ["altText", "Alt text"],
               ["performance", "Performance"],
+              ["schema", "Structured data"],
               ["urlBuilder", "URL builder"],
               ["usageFinder", "Usage finder"],
             ] as const
